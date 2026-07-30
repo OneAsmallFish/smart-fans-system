@@ -1,0 +1,12 @@
+=== Task 25: Agent Config/systemd QA ===
+After=network in service file:
+After=network.target multi-user.target
+Restart=always:
+Restart=always
+Non-root user:
+User=nobody
+mqtt field in config:
+2
+serial field in config:
+1
+RESULT: PASS

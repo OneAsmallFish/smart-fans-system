@@ -1,0 +1,6 @@
+=== Task 11: Fan Tach QA ===
+RPM formula (* 60):
+3
+Stall detection:
+15
+RESULT: PASS

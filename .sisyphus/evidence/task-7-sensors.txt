@@ -1,0 +1,10 @@
+=== Task 7: Sensor IO Schematic QA ===
+--- 4.7k pullup resistors ---
+8
+--- BME280 ---
+6
+--- WS2812B ---
+7
+--- Buttons/tactile switches ---
+5
+RESULT: PASS

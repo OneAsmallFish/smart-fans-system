@@ -1,0 +1,10 @@
+=== Task 24: MQTT+USB Relay QA ===
+paho.mqtt:
+8
+fan-controller topic namespace:
+2
+USB serial relay:
+10
+Reconnect:
+4
+RESULT: PASS

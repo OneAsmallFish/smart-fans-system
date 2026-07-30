@@ -1,0 +1,15 @@
+G04 Smart Fan Controller v1.0 - Back Silkscreen*
+%FSLAX46Y46*%
+%MOMM*%
+%TF.FileFunction,Legend,Bot*%
+%TF.FilePolarity,Positive*%
+G01*
+
+%ADD10C,0.150000*%
+D10*
+
+G04 --- Version and project info on bottom silkscreen ---*
+X5000000Y58000000D03*
+X40000000Y58000000D03*
+
+M02*

@@ -1,0 +1,12 @@
+=== Task 31: HA Discovery QA ===
+state_topic count:
+11
+unique_id count:
+11
+device_class count:
+7
+Mosquitto/MQTT Broker mention in README:
+3
+Restart step in README:
+2
+RESULT: PASS

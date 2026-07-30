@@ -1,0 +1,46 @@
+# ha/alerts.yaml — 告警二进制传感器
+mqtt:
+  binary_sensor:
+    - name: "Fan Controller Temperature Alert"
+      unique_id: "fan_ctrl_alert_temp"
+      state_topic: "fan-controller/+/alert"
+      value_template: >
+        {{ 'ON' if value_json.alert_type == 0 else 'OFF' }}
+      payload_on: "ON"
+      payload_off: "OFF"
+      device_class: heat
+      device:
+        identifiers: ["fan_ctrl_esp32"]
+
+    - name: "Fan Stall Alert"
+      unique_id: "fan_ctrl_alert_stall"
+      state_topic: "fan-controller/+/alert"
+      value_template: >
+        {{ 'ON' if value_json.alert_type == 1 else 'OFF' }}
+      payload_on: "ON"
+      payload_off: "OFF"
+      device_class: problem
+      device:
+        identifiers: ["fan_ctrl_esp32"]
+
+    - name: "Fan Controller Voltage Alert"
+      unique_id: "fan_ctrl_alert_voltage"
+      state_topic: "fan-controller/+/alert"
+      value_template: >
+        {{ 'ON' if value_json.alert_type == 2 else 'OFF' }}
+      payload_on: "ON"
+      payload_off: "OFF"
+      device_class: problem
+      device:
+        identifiers: ["fan_ctrl_esp32"]
+
+    - name: "Fan Controller Online"
+      unique_id: "fan_ctrl_online"
+      state_topic: "fan-controller/+/status"
+      value_template: >
+        {{ 'ON' if value_json.status == 'online' else 'OFF' }}
+      payload_on: "ON"
+      payload_off: "OFF"
+      device_class: connectivity
+      device:
+        identifiers: ["fan_ctrl_esp32"]

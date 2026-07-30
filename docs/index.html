@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="ESP32-S3 服务器智能风扇控制系统 — 4路PWM风扇、多传感器温度监控、MQTT、Web仪表盘、Home Assistant 集成">
+  <title>Smart Fan Controller · ESP32-S3 Server Fan Control</title>
+  <style>
+    :root {
+      --bg:      #0a0e17;
+      --card:    #111827;
+      --border:  #1f2937;
+      --text:    #e2e8f0;
+      --muted:   #9ca3af;
+      --green:   #22c55e;
+      --blue:    #3b82f6;
+      --cyan:    #06b6d4;
+      --purple:  #8b5cf6;
+      --amber:   #f59e0b;
+      --red:     #ef4444;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+           background: var(--bg); color: var(--text); line-height: 1.6; }
+    a { color: var(--cyan); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code, pre { font-family: 'Cascadia Code', 'Fira Code', monospace; }
+
+    /* NAV */
+    nav { position: fixed; top: 0; width: 100%; background: rgba(10,14,23,.92);
+          backdrop-filter: blur(10px); border-bottom: 1px solid var(--border);
+          z-index: 100; padding: .75rem 1.5rem;
+          display: flex; align-items: center; justify-content: space-between; }
+    .nav-brand { font-weight: 700; font-size: 1.1rem; color: var(--text);
+                 display: flex; align-items: center; gap: .5rem; }
+    .nav-links { display: flex; gap: 1.5rem; font-size: .9rem; }
+    .nav-links a { color: var(--muted); }
+    .nav-links a:hover { color: var(--text); }
+
+    /* HERO */
+    .hero { min-height: 100vh; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; text-align: center;
+            padding: 6rem 1.5rem 4rem;
+            background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(6,182,212,.12) 0%, transparent 70%),
+                        radial-gradient(ellipse 50% 40% at 80% 80%, rgba(139,92,246,.08) 0%, transparent 60%); }
+    .hero-tag { font-size: .8rem; font-weight: 600; letter-spacing: .12em;
+                text-transform: uppercase; color: var(--cyan); margin-bottom: 1rem; }
+    .hero h1 { font-size: clamp(2.5rem, 6vw, 4.5rem); font-weight: 800;
+               line-height: 1.1; margin-bottom: 1rem;
+               background: linear-gradient(135deg, #fff 30%, var(--cyan) 70%);
+               -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+               background-clip: text; }
+    .hero-sub { font-size: 1.1rem; color: var(--muted); max-width: 600px;
+                margin: 0 auto 2rem; }
+    .hero-badges { display: flex; gap: .5rem; flex-wrap: wrap; justify-content: center;
+                   margin-bottom: 2.5rem; }
+    .badge { background: var(--card); border: 1px solid var(--border);
+             border-radius: 9999px; padding: .3rem .9rem; font-size: .75rem;
+             color: var(--muted); display: flex; align-items: center; gap: .4rem; }
+    .badge .dot { width: 6px; height: 6px; border-radius: 50%; }
+    .hero-btns { display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center; }
+    .btn { padding: .7rem 1.6rem; border-radius: 8px; font-weight: 600;
+           font-size: .9rem; cursor: pointer; border: none; transition: .2s; }
+    .btn-primary { background: var(--cyan); color: #0a0e17; }
+    .btn-primary:hover { background: #22d3ee; text-decoration: none; color: #0a0e17; }
+    .btn-outline { background: transparent; color: var(--text);
+                   border: 1px solid var(--border); }
+    .btn-outline:hover { background: var(--card); text-decoration: none; }
+
+    /* SECTIONS */
+    section { padding: 5rem 1.5rem; max-width: 1100px; margin: 0 auto; }
+    .section-tag { font-size: .75rem; font-weight: 700; letter-spacing: .15em;
+                   text-transform: uppercase; color: var(--cyan); margin-bottom: .5rem; }
+    .section-title { font-size: clamp(1.6rem, 4vw, 2.5rem); font-weight: 700;
+                     margin-bottom: .75rem; }
+    .section-desc { color: var(--muted); max-width: 600px; margin-bottom: 3rem; }
+
+    /* STATS */
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+             gap: 1rem; margin: -1rem auto 0; max-width: 1100px; padding: 0 1.5rem 4rem; }
+    .stat { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+            padding: 1.5rem; text-align: center; }
+    .stat-num { font-size: 2.2rem; font-weight: 800; color: var(--cyan); }
+    .stat-label { font-size: .85rem; color: var(--muted); margin-top: .25rem; }
+
+    /* FEATURE CARDS */
+    .features-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+                     gap: 1.25rem; }
+    .feature-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+                    padding: 1.5rem; transition: border-color .2s, transform .2s; }
+    .feature-card:hover { border-color: var(--cyan); transform: translateY(-3px); }
+    .feature-icon { font-size: 2rem; margin-bottom: .75rem; }
+    .feature-title { font-weight: 700; font-size: 1.05rem; margin-bottom: .4rem; }
+    .feature-desc { color: var(--muted); font-size: .9rem; line-height: 1.55; }
+
+    /* ARCHITECTURE */
+    .arch-box { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+                padding: 2rem; overflow-x: auto; }
+    .arch-box pre { color: #86efac; font-size: .82rem; line-height: 1.6;
+                    white-space: pre; font-family: 'Cascadia Code','Courier New',monospace; }
+
+    /* HARDWARE TABLE */
+    .hw-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+    .hw-table th { text-align: left; padding: .75rem 1rem; border-bottom: 1px solid var(--border);
+                   color: var(--muted); font-weight: 600; font-size: .8rem;
+                   text-transform: uppercase; letter-spacing: .06em; }
+    .hw-table td { padding: .7rem 1rem; border-bottom: 1px solid #111; }
+    .hw-table tr:last-child td { border-bottom: none; }
+    .hw-table tr:hover td { background: rgba(255,255,255,.02); }
+    .hw-pill { background: rgba(6,182,212,.15); color: var(--cyan); border-radius: 9999px;
+               padding: .2rem .65rem; font-size: .78rem; font-weight: 600; }
+
+    /* QUICK START */
+    .steps { display: flex; flex-direction: column; gap: 2rem; }
+    .step { display: flex; gap: 1.5rem; }
+    .step-num { flex-shrink: 0; width: 36px; height: 36px; border-radius: 50%;
+                background: rgba(6,182,212,.15); color: var(--cyan); font-weight: 800;
+                display: flex; align-items: center; justify-content: center; }
+    .step-content { flex: 1; }
+    .step-title { font-weight: 700; margin-bottom: .5rem; }
+    .terminal { background: #020409; border: 1px solid var(--border); border-radius: 10px;
+                overflow: hidden; margin-top: .75rem; }
+    .term-bar { background: #0d1117; padding: .5rem 1rem; display: flex; gap: .45rem;
+                align-items: center; border-bottom: 1px solid var(--border); }
+    .term-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .term-code { padding: 1rem 1.25rem; font-size: .82rem; color: #86efac;
+                 line-height: 1.7; white-space: pre-wrap; }
+    .term-code .comment { color: var(--muted); }
+    .term-code .cmd { color: #93c5fd; }
+
+    /* TECH STACK */
+    .stack-pills { display: flex; flex-wrap: wrap; gap: .6rem; }
+    .stack-pill { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+                  padding: .5rem 1rem; font-size: .85rem; display: flex; align-items: center;
+                  gap: .5rem; transition: .2s; }
+    .stack-pill:hover { border-color: var(--blue); }
+
+    /* FOOTER */
+    footer { border-top: 1px solid var(--border); padding: 3rem 1.5rem; text-align: center;
+             color: var(--muted); font-size: .9rem; }
+    footer a { color: var(--muted); }
+    footer a:hover { color: var(--text); }
+
+    /* RESPONSIVE */
+    @media(max-width:640px) {
+      .nav-links { display: none; }
+      .step { flex-direction: column; gap: .75rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ░░ NAV ░░ -->
+<nav>
+  <div class="nav-brand">🌀 Smart Fan Controller</div>
+  <div class="nav-links">
+    <a href="#features">功能</a>
+    <a href="#architecture">架构</a>
+    <a href="#hardware">硬件</a>
+    <a href="#quickstart">快速开始</a>
+    <a href="https://github.com/OneAsmallFish/smart-fans-system" target="_blank">GitHub ↗</a>
+  </div>
+</nav>
+
+<!-- ░░ HERO ░░ -->
+<div class="hero">
+  <p class="hero-tag">ESP32-S3 · MQTT · IoT · HomeAssistant</p>
+  <h1>Smart Fan<br>Controller</h1>
+  <p class="hero-sub">服务器机柜智能风扇控制系统 — 4路PWM独立调速、多传感器温度监控、Web仪表盘、Home Assistant 自动集成</p>
+  <div class="hero-badges">
+    <span class="badge"><span class="dot" style="background:#E7352C"></span>ESP-IDF v5.3+</span>
+    <span class="badge"><span class="dot" style="background:#00ADD8"></span>Go 1.22+</span>
+    <span class="badge"><span class="dot" style="background:#3178C6"></span>TypeScript</span>
+    <span class="badge"><span class="dot" style="background:#22c55e"></span>MIT License</span>
+    <span class="badge"><span class="dot" style="background:#f59e0b"></span>80×60mm PCB</span>
+  </div>
+  <div class="hero-btns">
+    <a href="https://github.com/OneAsmallFish/smart-fans-system" class="btn btn-primary" target="_blank">⭐ GitHub</a>
+    <a href="#quickstart" class="btn btn-outline">🚀 快速开始</a>
+    <a href="../docs/deploy.md" class="btn btn-outline">📖 部署文档</a>
+  </div>
+</div>
+
+<!-- ░░ STATS ░░ -->
+<div class="stats">
+  <div class="stat"><div class="stat-num">4</div><div class="stat-label">路 PWM 风扇</div></div>
+  <div class="stat"><div class="stat-num">13</div><div class="stat-label">固件驱动组件</div></div>
+  <div class="stat"><div class="stat-num">11</div><div class="stat-label">HA 传感器实体</div></div>
+  <div class="stat"><div class="stat-num">3</div><div class="stat-label">OTA 回滚阶段</div></div>
+</div>
+
+<!-- ░░ FEATURES ░░ -->
+<section id="features">
+  <p class="section-tag">功能特性</p>
+  <h2 class="section-title">为服务器机柜而设计</h2>
+  <p class="section-desc">从传感器采集到云端联动，覆盖风扇控制全链路。</p>
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon">🌡️</div>
+      <div class="feature-title">多源温度感知</div>
+      <div class="feature-desc">BME280 板载（温湿度气压）+ DS18B20 远程探头（1-Wire，最多4个）+ ESP32 内部温度 + GPU/CPU（Go Agent via nvidia-smi + /proc）</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🌀</div>
+      <div class="feature-title">4路独立风扇控制</div>
+      <div class="feature-desc">25 kHz PWM 精准调速（Intel 4Pin 规范），PCNT 硬件脉冲计数转速反馈，停转检测（RPM&lt;200 持续3秒告警），软启动防电流冲击。</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📈</div>
+      <div class="feature-title">智能风扇曲线</div>
+      <div class="feature-desc">固定查表（LUT）线性插值 + PID 自适应双模式。Kp/Ki/Kd 可配置，Anti-windup 积分饱和保护，紧急模式（超过 80°C 全速）。</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">⚡</div>
+      <div class="feature-title">电源监控与保护</div>
+      <div class="feature-desc">12V / 5V / 3.3V 实时 ADC1 采样（100kΩ+20kΩ 安全分压）。PTC 保险丝 + 肖特基防反接 + TVS ESD 保护 + 断电保护电容。</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🌐</div>
+      <div class="feature-title">Web 实时控制台</div>
+      <div class="feature-desc">React + Node.js + WebSocket 2秒推送。温度仪表 · 风扇滑块 · LUT曲线可视化编辑 · PID参数 · 历史趋势图 · CSV导出 · OTA触发。</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🏠</div>
+      <div class="feature-title">Home Assistant 集成</div>
+      <div class="feature-desc">MQTT Discovery 自动创建 11个传感器实体 + 2路风扇控制 + 4个告警二进制传感器，无需自定义集成，兼容所有支持 MQTT Discovery 的平台。</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔄</div>
+      <div class="feature-title">安全 OTA 固件更新</div>
+      <div class="feature-desc">HTTPS 下载 + TLS 证书验证 + 3阶段确认回滚（启动30s / 网络2min / MQTT5min）。MQTT 和 USB-CDC 双触发，无需物理接触设备。</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🖥️</div>
+      <div class="feature-title">Go Linux Agent</div>
+      <div class="feature-desc">单一二进制，systemd 自启动。nvidia-smi GPU 监控（无 GPU 优雅降级）+ /proc 系统采集（CPU/内存/磁盘/负载）。USB-CDC 双向串口中继。</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔌</div>
+      <div class="feature-title">SATA 直取供电</div>
+      <div class="feature-desc">服务器 SATA 15Pin 电源接口，5V → AMS1117-3.3V LDO，12V 直供风扇（2A 走线）。自包含，无需额外电源适配器。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ░░ ARCHITECTURE ░░ -->
+<section id="architecture">
+  <p class="section-tag">系统架构</p>
+  <h2 class="section-title">全栈通信链路</h2>
+  <p class="section-desc">ESP32-S3 固件 → MQTT Broker → Go Agent + Web APP + Home Assistant，一条总线连接所有节点。</p>
+  <div class="arch-box">
+<pre>┌──────────────────────────────── 服务器机柜 ────────────────────────────────┐
+│                                                                             │
+│  ┌────────────────────────────┐   USB-CDC    ┌──────────────────────────┐  │
+│  │    ESP32-S3-N16R8 (固件)    │ ◄──────────► │  Go Agent (Linux)        │  │
+│  │                            │              │                          │  │
+│  │  4× 25kHz PWM  风扇控制     │    MQTT      │  · nvidia-smi  GPU 监控  │  │
+│  │  4× PCNT  Tach 转速反馈     │ ◄──────────► │  · /proc  系统采集        │  │
+│  │  BME280   温湿度气压         │              │  · systemd 服务自启动     │  │
+│  │  DS18B20  远程温度探头       │              └──────────────────────────┘  │
+│  │  12V/5V/3.3V 电源监控       │                                             │
+│  │  WS2812B  RGB 状态 LED      │                                             │
+│  └────────────────────────────┘                                             │
+│              │  SATA 15Pin (12V + 5V)                                       │
+└──────────────┼──────────────────────────────────────────────────────────────┘
+               │ WiFi ─── MQTT Broker (Mosquitto)
+               │                   │
+         ┌─────┴──────┐   ┌────────┼────────┐   ┌──────────────────┐
+         │  Web APP   │   │  Home  │        │   │  其他 MQTT 客户端 │
+         │ React+Node │   │ Assist.│ +auto  │   │  Node-RED / 脚本  │
+         └─────┬──────┘   └────────┴────────┘   └──────────────────┘
+               └── WebSocket → Dashboard · Fans · Alerts · History</pre>
+  </div>
+</section>
+
+<!-- ░░ HARDWARE ░░ -->
+<section id="hardware">
+  <p class="section-tag">硬件规格</p>
+  <h2 class="section-title">专为服务器设计的 PCB</h2>
+  <p class="section-desc">80×60mm 双层 FR4，嘉立创可打样，SATA 供电即插即用。</p>
+  <table class="hw-table">
+    <thead><tr><th>模块</th><th>规格</th><th>备注</th></tr></thead>
+    <tbody>
+      <tr><td>主控</td><td><span class="hw-pill">ESP32-S3-N16R8</span></td><td>16MB Flash + 8MB PSRAM，原生 USB-OTG</td></tr>
+      <tr><td>风扇接口</td><td><span class="hw-pill">4× 4Pin PWM</span></td><td>25 kHz Intel 规范，SATA 12V 直供（2A 走线）</td></tr>
+      <tr><td>电平转换</td><td><span class="hw-pill">74AHCT125</span></td><td>3.3V→5V PWM；Tach 5V→3.3V 分压</td></tr>
+      <tr><td>环境传感器</td><td><span class="hw-pill">BME280</span></td><td>I2C，温度/湿度/气压，Bosch int64_t 补偿</td></tr>
+      <tr><td>温度探头</td><td><span class="hw-pill">DS18B20 ×2</span></td><td>1-Wire，CRC8 校验，最多4个并联</td></tr>
+      <tr><td>状态 LED</td><td><span class="hw-pill">WS2812B-2020</span></td><td>3.3V 供电（逻辑兼容），RMT 驱动</td></tr>
+      <tr><td>供电</td><td><span class="hw-pill">SATA 15Pin</span></td><td>5V→AMS1117-3.3（SOT-223）；12V 直供风扇</td></tr>
+      <tr><td>PCB</td><td><span class="hw-pill">80×60mm</span></td><td>双层 FR4，嘉立创标准工艺，Gerber 已生成</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ░░ QUICK START ░░ -->
+<section id="quickstart">
+  <p class="section-tag">快速开始</p>
+  <h2 class="section-title">三步启动系统</h2>
+  <p class="section-desc">从零到运行整套系统，约30分钟（不含焊接）。</p>
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-content">
+        <div class="step-title">烧录固件 &amp; WiFi 配网</div>
+        <div class="terminal">
+          <div class="term-bar"><span class="term-dot" style="background:#ef4444"></span><span class="term-dot" style="background:#f59e0b"></span><span class="term-dot" style="background:#22c55e"></span></div>
+          <div class="term-code"><span class="comment"># 编译并烧录</span>
+cd firmware &amp;&amp; idf.py set-target esp32s3 &amp;&amp; idf.py build
+<span class="cmd">idf.py -p /dev/ttyACM0 flash monitor</span>
+<span class="comment"># 长按配网键 3s → 连 FanCtrl-XXXX → 192.168.4.1 完成配网</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-content">
+        <div class="step-title">部署 Go Agent（服务器）</div>
+        <div class="terminal">
+          <div class="term-bar"><span class="term-dot" style="background:#ef4444"></span><span class="term-dot" style="background:#f59e0b"></span><span class="term-dot" style="background:#22c55e"></span></div>
+          <div class="term-code">cd agent &amp;&amp; make build
+<span class="cmd">sudo bash install.sh</span>
+sudo nano /etc/smart-fan-agent/config.yaml
+<span class="cmd">sudo systemctl start smart-fan-agent</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-content">
+        <div class="step-title">Web 控制台</div>
+        <div class="terminal">
+          <div class="term-bar"><span class="term-dot" style="background:#ef4444"></span><span class="term-dot" style="background:#f59e0b"></span><span class="term-dot" style="background:#22c55e"></span></div>
+          <div class="term-code">cd web/backend &amp;&amp; npm install &amp;&amp; <span class="cmd">npm start</span>
+cd web/frontend &amp;&amp; npm install &amp;&amp; <span class="cmd">npm run dev</span>
+<span class="comment"># → http://localhost:5173</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ░░ TECH STACK ░░ -->
+<section>
+  <p class="section-tag">技术栈</p>
+  <h2 class="section-title">使用的开源技术</h2>
+  <div class="stack-pills" style="margin-top:2rem">
+    <span class="stack-pill">🔴 ESP-IDF v5.3</span><span class="stack-pill">🔵 Go 1.22</span>
+    <span class="stack-pill">🟦 TypeScript 5</span><span class="stack-pill">⚛️ React 18</span>
+    <span class="stack-pill">🟩 Node.js 20</span><span class="stack-pill">📊 Recharts</span>
+    <span class="stack-pill">🔌 paho.mqtt.golang</span><span class="stack-pill">📡 Mosquitto</span>
+    <span class="stack-pill">🏠 Home Assistant</span><span class="stack-pill">⚡ Vite</span>
+    <span class="stack-pill">✅ Zod</span><span class="stack-pill">🛡️ Unity</span>
+  </div>
+</section>
+
+<!-- ░░ FOOTER ░░ -->
+<footer>
+  <p style="font-size:1.5rem;margin-bottom:.75rem">🌀</p>
+  <p><strong>Smart Fan Controller</strong> — ESP32-S3 服务器智能风扇控制系统</p>
+  <p style="margin-top:.5rem">
+    <a href="https://github.com/OneAsmallFish/smart-fans-system" target="_blank">GitHub</a> ·
+    <a href="https://github.com/OneAsmallFish/smart-fans-system/blob/main/docs/deploy.md">部署文档</a> ·
+    <a href="https://github.com/OneAsmallFish/smart-fans-system/blob/main/docs/hardware-assembly.md">硬件组装</a> ·
+    <a href="https://github.com/OneAsmallFish/smart-fans-system/blob/main/docs/protocol.md">MQTT 协议</a>
+  </p>
+  <p style="margin-top:1rem;font-size:.8rem">MIT License · Made for homelab enthusiasts</p>
+</footer>
+
+<script>
+  const sections = document.querySelectorAll('section[id]')
+  const links = document.querySelectorAll('.nav-links a[href^="#"]')
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        links.forEach(l => l.style.color = '')
+        const a = [...links].find(l => l.getAttribute('href') === '#' + e.target.id)
+        if (a) a.style.color = '#06b6d4'
+      }
+    })
+  }, { rootMargin: '-40% 0px -55% 0px' })
+  sections.forEach(s => obs.observe(s))
+</script>
+</body>
+</html>

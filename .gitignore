@@ -1,0 +1,60 @@
+# ESP-IDF build artifacts
+firmware/build/
+firmware/managed_components/
+firmware/sdkconfig
+firmware/.cache/
+firmware/**/.gitignore
+
+# Go build artifacts
+agent/build/
+agent/vendor/
+agent/*.exe
+agent/smart-fan-agent
+
+# Node.js
+web/node_modules/
+web/frontend/node_modules/
+web/backend/node_modules/
+web/frontend/dist/
+web/backend/dist/
+web/.env
+web/frontend/.env
+web/backend/.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# KiCad artifacts
+hardware/**/__pycache__/
+hardware/**/*.bak
+hardware/**/*-backups/
+hardware/**/*.000
+hardware/gerber/*.zip
+hardware/**/*.dsn
+hardware/**/*.ses
+
+# Secrets / credentials (never commit)
+*.pem
+*.key
+*.crt
+config.local.yaml
+agent/config.local.yaml
+**/secrets.yaml
+
+# Editor / OS
+.vscode/settings.json
+.idea/
+*.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Test evidence (optional, keep for CI)
+# .sisyphus/evidence/
+
+# Logs
+*.log
+logs/

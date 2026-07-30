@@ -1,0 +1,8 @@
+=== Task 30: Antenna Keepout QA ===
+    (fp_text user "ANTENNA →" (at 6 0 0) (layer "F.SilkS")
+  ; ===== ANTENNA KEEPOUT ZONE (15mm x 15mm) =====
+  ; ESP32-S3-WROOM-1 antenna end is at x=44 (35+9), keepout extends to x=80 edge
+    (name "ANTENNA_KEEPOUT_15mm")
+  ; 15mm keepout note
+  (gr_text "天线禁布区 15mm x 15mm (ANTENNA keepout)" (at 71 25 0)
+RESULT: PASS

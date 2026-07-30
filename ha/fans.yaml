@@ -1,0 +1,37 @@
+# ha/fans.yaml — 风扇控制实体 (HA Fan 组件)
+mqtt:
+  fan:
+    - name: "Fan 0"
+      unique_id: "fan_ctrl_fan0"
+      command_topic: "fan-controller/esp32-placeholder/command/fan"
+      payload_on: >
+        {"fan_index":0,"mode":"manual","duty_pct":100,"timestamp":0}
+      payload_off: >
+        {"fan_index":0,"mode":"manual","duty_pct":0,"timestamp":0}
+      percentage_command_topic: "fan-controller/esp32-placeholder/command/fan"
+      percentage_command_template: >
+        {"fan_index":0,"mode":"manual","duty_pct":{{ value }},"timestamp":0}
+      percentage_state_topic: "fan-controller/+/fan/0/state"
+      percentage_value_template: "{{ value_json.pwm_duty_pct }}"
+      speed_range_min: 0
+      speed_range_max: 100
+      device:
+        identifiers: ["fan_ctrl_esp32"]
+        name: "Smart Fan Controller"
+
+    - name: "Fan 1"
+      unique_id: "fan_ctrl_fan1"
+      command_topic: "fan-controller/esp32-placeholder/command/fan"
+      payload_on: >
+        {"fan_index":1,"mode":"manual","duty_pct":100,"timestamp":0}
+      payload_off: >
+        {"fan_index":1,"mode":"manual","duty_pct":0,"timestamp":0}
+      percentage_command_topic: "fan-controller/esp32-placeholder/command/fan"
+      percentage_command_template: >
+        {"fan_index":1,"mode":"manual","duty_pct":{{ value }},"timestamp":0}
+      percentage_state_topic: "fan-controller/+/fan/1/state"
+      percentage_value_template: "{{ value_json.pwm_duty_pct }}"
+      speed_range_min: 0
+      speed_range_max: 100
+      device:
+        identifiers: ["fan_ctrl_esp32"]

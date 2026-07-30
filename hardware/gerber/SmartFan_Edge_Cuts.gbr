@@ -1,0 +1,18 @@
+G04 Smart Fan Controller v1.0 - Board Outline (Edge Cuts)*
+G04 Board dimensions: 80mm x 60mm*
+%FSLAX46Y46*%
+%MOMM*%
+%TF.FileFunction,Profile,NP*%
+G01*
+
+%ADD10C,0.050000*%
+D10*
+
+G04 --- Rectangular board outline: 80 x 60 mm ---*
+X0000000Y0000000D02*
+X80000000Y0000000D01*
+X80000000Y60000000D01*
+X0000000Y60000000D01*
+X0000000Y0000000D01*
+
+M02*

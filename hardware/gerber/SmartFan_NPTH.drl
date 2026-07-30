@@ -1,0 +1,16 @@
+M48
+; Smart Fan Controller v1.0 - Non-Plated Through Holes (NPTH)
+; Mounting holes: 4x M3 (3.2mm drill)
+; Board corners at 3mm from edges
+METRIC,TZ
+T1C3.200     ; M3 mounting holes
+%
+
+; --- 4x Corner Mounting Holes ---
+T1
+X3.000Y3.000
+X77.000Y3.000
+X3.000Y57.000
+X77.000Y57.000
+
+M30

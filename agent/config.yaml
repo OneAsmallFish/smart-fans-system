@@ -1,0 +1,15 @@
+mqtt:
+  broker: "mqtt://192.168.1.100"
+  port: 1883
+  client_id: "smart-fan-agent"
+  topic_prefix: "fan-controller"
+  username: ""
+  password: ""
+
+serial:
+  port: "/dev/ttyACM0"
+  baud_rate: 115200
+
+monitor:
+  interval: 5
+  gpu_enabled: true

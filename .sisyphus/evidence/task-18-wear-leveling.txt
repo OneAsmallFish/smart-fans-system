@@ -1,0 +1,8 @@
+=== Task 18: Flash Storage QA ===
+Wear Levelling API:
+19
+Circular wrap logic:
+4
+int64_t throttle:
+2
+RESULT: PASS
