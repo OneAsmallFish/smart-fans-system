@@ -81,24 +81,7 @@
     )
   )
 
-  (zone
-    (net 0) (net_name "")
-    (layer "F.Cu")
-    (name "ANTENNA_KEEPOUT_15mm")
-    (hatch edge 0.5)
-    (connect_pads (clearance 0))
-    (min_thickness 0.25)
-    (keepout_constraints
-      (kcq_tracks no) (kcq_vias no) (kcq_copperpour no)
-      (kcq_footprints no) (kcq_text no)
-    )
-    (polygon
-      (pts
-        (xy 62 10) (xy 80 10) (xy 80 40) (xy 62 40)
-      )
-    )
-  )
-  (gr_text "天线禁布区 15mm x 15mm (ANTENNA keepout)" (at 71 25 0)
+  (gr_text "天线禁布区 15mm x 15mm (需在 KiCad v10 中手动添加 keepout)" (at 71 25 0)
     (layer "F.SilkS")
     (effects (font (size 0.6 0.6) (thickness 0.1)) (justify left mirror))
   )
