@@ -60,16 +60,12 @@
     )
   )
 
-  ; ===== BOARD OUTLINE: 80mm x 60mm =====
   (gr_rect
     (start 0 0) (end 80 60)
     (stroke (width 0.05) (type solid))
     (layer "Edge.Cuts")
   )
 
-  ; ===== ESP32-S3-WROOM-1 MODULE =====
-  ; Placed at center (35, 25), antenna end facing right edge (toward x=80)
-  ; Module size: 18mm x 25.5mm
   (footprint "ESP32-S3-WROOM-1" (layer "F.Cu")
     (at 35 25 0)
     (descr "ESP32-S3-WROOM-1-N16R8, WiFi+BLE module")
@@ -80,15 +76,11 @@
       (effects (font (size 1 1) (thickness 0.15)))
     )
     (fp_rect (start -9 -12.75) (end 9 12.75) (layer "F.Fab") (stroke (width 0.1) (type solid)))
-    ; Antenna direction arrow pointing toward keepout zone
     (fp_text user "ANTENNA →" (at 6 0 0) (layer "F.SilkS")
       (effects (font (size 0.8 0.8) (thickness 0.12)))
     )
   )
 
-  ; ===== ANTENNA KEEPOUT ZONE (15mm x 15mm) =====
-  ; ESP32-S3-WROOM-1 antenna end is at x=44 (35+9), keepout extends to x=80 edge
-  ; No copper, no components, no silkscreen in this area
   (zone
     (net 0) (net_name "")
     (layer "F.Cu")
@@ -106,13 +98,11 @@
       )
     )
   )
-  ; 15mm keepout note
   (gr_text "天线禁布区 15mm x 15mm (ANTENNA keepout)" (at 71 25 0)
     (layer "F.SilkS")
     (effects (font (size 0.6 0.6) (thickness 0.1)) (justify left mirror))
   )
 
-  ; ===== SATA POWER CONNECTOR J1 =====
   (footprint "SATA-15P" (layer "F.Cu")
     (at 0 30 90)
     (fp_text reference "J1" (at -3 0) (layer "F.SilkS")
@@ -126,7 +116,6 @@
     )
   )
 
-  ; ===== AMS1117-3.3 LDO U1 =====
   (footprint "AMS1117-3.3-SOT223" (layer "F.Cu")
     (at 10 8 0)
     (fp_text reference "U1" (at 0 -2.5) (layer "F.SilkS")
@@ -140,7 +129,6 @@
     )
   )
 
-  ; ===== 74AHCT125 U3 =====
   (footprint "74AHCT125-SOIC14" (layer "F.Cu")
     (at 55 8 0)
     (fp_text reference "U3" (at 0 -5) (layer "F.SilkS")
@@ -151,7 +139,6 @@
     )
   )
 
-  ; ===== BME280 U4 =====
   (footprint "BME280-LGA8" (layer "F.Cu")
     (at 20 50 0)
     (fp_text reference "U4" (at 0 -2) (layer "F.SilkS")
@@ -162,7 +149,6 @@
     )
   )
 
-  ; ===== TYPE-C J2 =====
   (footprint "USB-C-16P" (layer "F.Cu")
     (at 72 55 0)
     (fp_text reference "J2" (at 0 -4) (layer "F.SilkS")
@@ -173,7 +159,6 @@
     )
   )
 
-  ; ===== FAN CONNECTORS J3-J6 (4Pin) =====
   (footprint "FAN-4PIN-2.54" (layer "F.Cu") (at 15 2 0)
     (fp_text reference "J3" (at 0 -2) (layer "F.SilkS") (effects (font (size 0.8 0.8) (thickness 0.12))))
     (fp_text value "FAN1" (at 0 2) (layer "F.Fab") (effects (font (size 0.7 0.7) (thickness 0.1))))
@@ -191,7 +176,6 @@
     (fp_text value "FAN4" (at 0 2) (layer "F.Fab") (effects (font (size 0.7 0.7) (thickness 0.1))))
   )
 
-  ; ===== DS18B20 TERMINALS J7/J8 =====
   (footprint "TERMINAL-3P-XH254" (layer "F.Cu") (at 5 55 0)
     (fp_text reference "J7" (at 0 -2) (layer "F.SilkS") (effects (font (size 0.8 0.8) (thickness 0.12))))
     (fp_text value "DS18B20-1" (at 0 2) (layer "F.Fab") (effects (font (size 0.7 0.7) (thickness 0.1))))
@@ -201,13 +185,11 @@
     (fp_text value "DS18B20-2" (at 0 2) (layer "F.Fab") (effects (font (size 0.7 0.7) (thickness 0.1))))
   )
 
-  ; ===== WS2812B-2020 LED1 =====
   (footprint "WS2812B-2020" (layer "F.Cu") (at 75 5 0)
     (fp_text reference "LED1" (at 0 -2) (layer "F.SilkS") (effects (font (size 0.8 0.8) (thickness 0.12))))
     (fp_text value "WS2812B VCC=3.3V" (at 0 2) (layer "F.Fab") (effects (font (size 0.6 0.6) (thickness 0.1))))
   )
 
-  ; ===== TACTILE SWITCHES =====
   (footprint "SW-6x6" (layer "F.Cu") (at 30 58 0)
     (fp_text reference "SW1" (at 0 -2) (layer "F.SilkS") (effects (font (size 0.8 0.8) (thickness 0.12))))
     (fp_text value "RST" (at 0 2) (layer "F.Fab") (effects (font (size 0.7 0.7) (thickness 0.1))))
@@ -221,13 +203,11 @@
     (fp_text value "WIFI CFG" (at 0 2) (layer "F.Fab") (effects (font (size 0.7 0.7) (thickness 0.1))))
   )
 
-  ; ===== VERSION STRING =====
   (gr_text "Smart Fan Ctrl v1.0  ESP32-S3-N16R8" (at 5 58 0)
     (layer "B.SilkS")
     (effects (font (size 1 1) (thickness 0.15)))
   )
 
-  ; ===== MOUNTING HOLES (4x M3, 3mm from corners) =====
   (footprint "MountingHole_3.2mm" (layer "F.Cu") (at 3 3 0)
     (fp_text reference "H1" (at 0 -3) (layer "F.SilkS") (effects (font (size 0.8 0.8) (thickness 0.12))))
     (pad 1 np_thru_hole circle (at 0 0) (size 3.2 3.2) (drill 3.2) (layers "*.Cu" "*.Mask"))
@@ -245,14 +225,12 @@
     (pad 1 np_thru_hole circle (at 0 0) (size 3.2 3.2) (drill 3.2) (layers "*.Cu" "*.Mask"))
   )
 
-  ; ===== 12V POWER TRACES (≥2.0mm per pcb-layout.sch routing rule) =====
   (segment (start 0 25) (end 15 25) (width 2.0) (layer "F.Cu") (net 1))
   (segment (start 15 25) (end 15 2)  (width 2.0) (layer "F.Cu") (net 1))
   (segment (start 15 2)  (end 30 2)  (width 2.0) (layer "F.Cu") (net 1))
   (segment (start 30 2)  (end 45 2)  (width 2.0) (layer "F.Cu") (net 1))
   (segment (start 45 2)  (end 60 2)  (width 2.0) (layer "F.Cu") (net 1))
 
-  ; ===== USB D+/D- DIFFERENTIAL PAIR (equal length) =====
   (segment (start 35 55) (end 55 55) (width 0.25) (layer "F.Cu") (net 10))
   (segment (start 35 56) (end 55 56) (width 0.25) (layer "F.Cu") (net 11))
 
