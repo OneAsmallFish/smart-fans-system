@@ -1,0 +1,12 @@
+=== Task 5: Power + ESP32 Schematic QA ===
+--- PWDIS not connected ---
+5
+--- AMS1117-3.3 LDO ---
+2
+--- CC1/CC2 5.1k pulldown ---
+2
+--- ADC1 channels ---
+6
+--- BOM rows >= 15 ---
+79
+RESULT: PASS

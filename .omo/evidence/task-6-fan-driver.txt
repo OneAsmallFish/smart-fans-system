@@ -1,0 +1,10 @@
+=== Task 6: Fan Driver Schematic QA ===
+--- 74AHCT125 level shifter ---
+8
+--- 5V VCC for level shifter ---
+7
+--- Tach 5V pullup ---
+5
+--- GPIO count (>=8) ---
+19
+RESULT: PASS

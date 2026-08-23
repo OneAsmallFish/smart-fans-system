@@ -1,0 +1,6 @@
+=== Task 14: RGB LED QA ===
+5 preset modes:
+7
+RMT peripheral:
+25
+RESULT: PASS

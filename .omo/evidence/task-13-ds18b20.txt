@@ -1,0 +1,6 @@
+=== Task 13: DS18B20 QA ===
+CRC8:
+5
+ROM search:
+4
+RESULT: PASS

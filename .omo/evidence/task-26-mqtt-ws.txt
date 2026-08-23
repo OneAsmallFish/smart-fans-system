@@ -1,0 +1,10 @@
+=== Task 26: Web API Server QA ===
+MQTT connect in mqtt.ts:
+10
+fan-controller topic subscription:
+1
+WebSocket push:
+7
+Health endpoint:
+1
+RESULT: PASS

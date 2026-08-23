@@ -1,0 +1,10 @@
+=== Task 9: Power Monitor QA ===
+ADC1 used (not ADC2):
+6
+ADC2 violations:
+1
+VOLTAGE_DIVIDER_12V macro:
+2
+12V ratio == 6.0:
+#define VOLTAGE_DIVIDER_12V  6.0f    /* 100k/(100k+20k) = 1/6 → ×6 */
+RESULT: PASS (0 ADC2 violations, divider=6.0)
