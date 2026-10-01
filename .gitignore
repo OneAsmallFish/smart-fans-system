@@ -15,6 +15,7 @@ agent/smart-fan-agent
 web/node_modules/
 web/frontend/node_modules/
 web/backend/node_modules/
+test/simulator/node_modules/
 web/frontend/dist/
 web/backend/dist/
 web/.env

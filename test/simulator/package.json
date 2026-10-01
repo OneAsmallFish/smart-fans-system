@@ -1,0 +1,18 @@
+{
+  "name": "smart-fan-protocol-simulator",
+  "version": "1.0.0",
+  "private": true,
+  "description": "无硬件协议模拟器 — 模拟 ESP32-S3 智能风扇控制器，MQTT 协议 v1.0.1（docs/protocol.md）",
+  "type": "module",
+  "main": "simulator.js",
+  "scripts": {
+    "start": "node simulator.js",
+    "selftest": "node selftest.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "mqtt": "^5.8.1"
+  }
+}
