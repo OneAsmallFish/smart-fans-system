@@ -60,13 +60,19 @@ idf.py -p COM3 flash monitor
 # Linux/macOS
 screen /dev/ttyACM0 115200
 
-# 可用命令:
-status          → 查看系统状态 JSON
-fan 0 speed 75  → 设置风扇0转速 75%
-fan 0 auto      → 恢复风扇0自动模式
-ota https://... → 触发 OTA 更新
-reboot          → 重启设备
-help            → 命令列表
+# 可用命令（与固件 FW-22 实现一致）
+status            → 查看系统状态 JSON
+fan <0-7> <0-100> → 设置风扇转速（如 fan 0 75 = 风扇0转速 75%，并切 MANUAL 模式）
+wifi status       → 查看 WiFi 连接状态
+wifi reset        → 恢复出厂（清除 WiFi/曲线/MQTT 配置后重启）
+mqtt status       → 查看 MQTT broker 配置与连接状态
+mqtt set <url>    → 设置 broker（如 mqtt set mqtt://192.168.1.100:1883，重启生效）
+ota https://...   → 触发 OTA 更新
+reboot            → 重启设备
+help              → 命令列表
+
+# 恢复某路风扇自动模式：发送曲线命令（REST/mosquitto）后设备回 auto，
+# 或重启设备（曲线模式默认 LUT 自动）。
 ```
 
 ---
@@ -214,7 +220,7 @@ OTA 更新支持两种方式：
 **方式2：通过 MQTT 命令**
 ```bash
 mosquitto_pub -h localhost \
-  -t "fan-controller/esp32-XXXXXX/command/ota" \
+  -t "fan-controller/esp32-a1b2c3/command/ota" \
   -m '{"firmware_url":"https://your-server.com/v1.1.0.bin","timestamp":0}'
 ```
 
@@ -253,3 +259,13 @@ chmod +x test/smoke_test.sh
 ./test/smoke_test.sh localhost localhost 2>&1 | tee smoke.log
 grep "PASS\|FAIL" smoke.log
 ```
+
+
+---
+
+## Web 层安全声明（局域网假设）
+
+Web 后端当前监听 `0.0.0.0:3001` 且 CORS 全开、REST API 无鉴权——**仅适用于
+可信局域网**（homelab/内网机房）。请勿将 3001 端口直接暴露到公网；如需外网
+访问，请置于反向代理 + VPN（如 Tailscale/WireGuard）之后。简单 token 鉴权
+为规划项。

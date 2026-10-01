@@ -1,7 +1,8 @@
 # MQTT协议规范 - 服务器智能风扇控制系统
 
-**版本**: v1.0  
-**最后更新**: 2026-07-30
+**版本**: v1.0.1
+
+**最后更新**: 2026-08-25
 
 ---
 
@@ -13,7 +14,7 @@
 - 所有JSON消息必须包含 `timestamp`（Unix秒）和 `device_id`（设备唯一标识）
 - QoS 0用于高频遥测数据（传感器读数），QoS 1用于控制指令和告警
 - Last Will Testament (LWT) 用于设备在线状态管理
-- Home Assistant MQTT Discovery兼容
+- Home Assistant 集成：现行方案为 `ha/` 手动 packages；MQTT Discovery 为规划项（§8）
 
 ---
 
@@ -23,20 +24,24 @@
 
 | Topic类别 | Topic模板 | QoS | 方向 | 说明 |
 |----------|-----------|:---:|:----:|------|
-| **Status** | `fan-controller/{device_id}/status` | 1 | 设备→Broker | 设备在线状态（LWT遗嘱消息）|
+| **Status** | `fan-controller/{device_id}/status` | 1 | 设备→Broker | 设备在线状态（LWT遗嘱消息，retain）|
 | **Sensor** | `fan-controller/{device_id}/sensor/{type}` | 0 | 设备→Broker | 传感器数据上报 |
+| **Sensor(buffered)** | `fan-controller/{device_id}/sensor/{type}/buffered` | 0 | 设备→Broker | 离线补发（§10） |
 | **Fan** | `fan-controller/{device_id}/fan/{index}/state` | 0 | 设备→Broker | 风扇状态上报 |
 | **Command** | `fan-controller/{device_id}/command/{action}` | 1 | Broker→设备 | 控制指令下发 |
-| **Alert** | `fan-controller/{device_id}/alert` | 1 | 设备→Broker | 告警消息 |
-| **Config** | `fan-controller/{device_id}/config/{section}` | 1 | 双向 | 配置更新 |
-| **OTA** | `fan-controller/{device_id}/ota` | 1 | Broker→设备 | 固件更新触发 |
-| **Discovery** | `homeassistant/{component}/{device_id}/{object_id}/config` | 1 | 设备→Broker | Home Assistant自动发现 |
+| **Alert(事件)** | `fan-controller/{device_id}/alert` | 1 | 设备→Broker | 告警触发事件（web 消费） |
+| **Alert(状态)** | `fan-controller/{device_id}/alert/{type}/state` | 1 | 设备→Broker | per-type retained 告警状态（HA 消费，§5.1） |
+| **Config** | `fan-controller/{device_id}/config/{section}` | 1 | 双向 | 配置更新（§6，仅 alert 已实现） |
+| **OTA** | `fan-controller/{device_id}/command/ota` | 1 | Broker→设备 | 固件更新触发（§7） |
+| **OTA状态** | `fan-controller/{device_id}/ota/status` | 1 | 设备→Broker | OTA 进度反馈（§7） |
+| **Discovery** | `homeassistant/{component}/{device_id}/{object_id}/config` | 1 | 设备→Broker | HA 自动发现（**规划中，未实现**，§8） |
 
-**{device_id}**: 设备唯一标识，格式 `esp32-XXXXXX`（ESP32-S3 MAC地址后6位）  
-**{type}**: 传感器类型 `bme280`, `ds18b20`, `voltage`, `internal_temp`  
-**{index}**: 风扇索引 `0`, `1`, `2`, `3`  
-**{action}**: 控制动作 `fan`, `curve`, `reboot`, `reset`  
-**{section}**: 配置段 `wifi`, `mqtt`, `alert`, `curve`
+- **{device_id}**: 设备唯一标识，格式 `esp32-XXXXXX`（ESP32-S3 MAC地址后6位）
+- **{type}**: 传感器类型 `bme280`, `ds18b20`, `voltage`, `internal_temp`
+- **{index}**: 风扇索引 `0` ~ `7`（8 路，硬件 v1.2）
+- **{action}**: 控制动作 `fan`, `curve`, `reboot`, `reset`, `ota`
+- **{section}**: 配置段 `wifi`, `mqtt`, `alert`, `curve`（wifi/mqtt 为规划中，§6）
+- **{type}(alert)**: 告警类型 `temperature_high`, `fan_stall`, `voltage_abnormal`, `wifi_disconnected`
 
 ---
 
@@ -70,9 +75,13 @@
 
 **MQTT连接参数**:
 - LWT Topic: `fan-controller/{device_id}/status`
-- LWT Payload: 离线JSON
+- LWT Payload: 离线JSON（含 timestamp/device_id/status 三字段）
 - LWT QoS: 1
 - LWT Retain: true
+
+**timestamp 语义（v1.0.1/ADJ-1）**: 统一为 Unix 秒（`time(NULL)`）。设备 SNTP
+未同步时上报值为 Unix 早期值（< 1000000000），消费方应显示"时间未同步"而非
+按 1970 年日期渲染。
 
 ---
 
@@ -220,6 +229,11 @@
 }
 ```
 
+**字段说明**:
+- `temperature_source`（枚举，4 个合法值）: `bme280` / `ds18b20_0` / `ds18b20_1` / `internal`
+- PID 参数（`setpoint_c`/`kp`/`ki`/`kd`）平铺在 payload 顶层（不嵌套 `pid` 对象）
+- LUT `points` 的 `temp_c` 必须严格递增（乱序将被固件拒绝），点数上限 10
+
 ### 4.3 设备重启
 
 **Topic**: `fan-controller/{device_id}/command/reboot`  
@@ -247,6 +261,8 @@
 
 ## 5. Alert — 告警消息
 
+### 5.1 告警触发事件（web 消费）
+
 **Topic**: `fan-controller/{device_id}/alert`  
 **Payload**:
 ```json
@@ -262,9 +278,9 @@
 }
 ```
 
-**告警类型** (`alert_type`):
-- `temperature_high`: 温度过高
-- `fan_stalled`: 风扇停转
+**告警类型** (`alert_type`，字符串枚举):
+- `temperature_high`: 温度过高（三源最大值，含 DS18B20 探头）
+- `fan_stall`: 风扇停转（duty>5% 且 RPM<200，0% 占空比合法停转除外）
 - `voltage_abnormal`: 电压异常
 - `wifi_disconnected`: WiFi断开超过60秒
 
@@ -272,11 +288,44 @@
 - `warning`: 警告（黄色LED）
 - `critical`: 严重（红色LED）
 
+### 5.2 per-type 告警状态 topic（HA 消费，retained）
+
+**Topic**: `fan-controller/{device_id}/alert/{type}/state`（retain=true）
+
+每类告警独立的状态 topic，触发/恢复时更新，四类互不干扰：
+
+**Payload**:
+```json
+{
+  "active": true,
+  "severity": "warning",
+  "timestamp": 1722315503
+}
+```
+
+- `active`: 当前告警是否处于激活状态（恢复时发布 `false`）
+- HA 的 binary_sensor 订阅此 topic，按 `value_json.active` 判定
+
+**告警阈值模型（双阈值，v1.0.1 裁决 ADJ-14）**:
+
+| 维度 | 阈值 |
+|------|------|
+| 温度 | 75°C 警告（warning）/ 80°C critical |
+| 12V 电压 | 窗口 10.8 – 13.2V |
+| 5V 电压 | 5V ± 0.25V |
+| 3.3V 电压 | 3.3V ± 0.165V |
+| 风扇停转 | duty > 5% 且 RPM < 200 |
+| WiFi 断连 | > 60 秒 |
+
 ---
 
 ## 6. Config — 配置管理
 
-### 6.1 WiFi配置
+> **实现状态（v1.0.1 / ADJ-9）**：`config/alert` 已实现（set 保存 NVS+应用，get 回读）；
+> `config/wifi` 与 `config/mqtt` **规划中，现行经 USB console 命令配置**
+> （`wifi status|reset`、`mqtt status|set <url>`，见 deploy.md §1.4）。
+
+### 6.1 WiFi配置（规划中 — 现行经 USB console）
 
 **Topic**: `fan-controller/{device_id}/config/wifi`  
 **Payload**:
@@ -289,27 +338,33 @@
 }
 ```
 
-### 6.2 告警规则配置
+### 6.2 告警规则配置（已实现，双阈值模型）
 
 **Topic**: `fan-controller/{device_id}/config/alert`  
-**Payload**:
+**Payload（set）**:
 ```json
 {
   "timestamp": 1722315503,
   "device_id": "esp32-a1b2c3",
   "rules": [
-    {"type": "temperature_high", "threshold": 75.0, "enabled": true},
-    {"type": "fan_stalled", "threshold": 200, "enabled": true},
-    {"type": "voltage_abnormal", "12v_min": 10.8, "12v_max": 13.2, "enabled": true}
+    {"type": "temperature_high", "warn_c": 75.0, "crit_c": 80.0, "enabled": true},
+    {"type": "fan_stall", "threshold": 200, "enabled": true},
+    {"type": "voltage_abnormal", "12v_min": 10.8, "12v_max": 13.2, "enabled": true},
+    {"type": "wifi_disconnected", "threshold": 60, "enabled": true}
   ]
 }
 ```
+
+**Payload（get 回读）**: 发布 `{"get": true}` 到同一 topic，设备回发当前生效规则。
 
 ---
 
 ## 7. OTA — 固件更新
 
-**Topic**: `fan-controller/{device_id}/ota`  
+**Topic**: `fan-controller/{device_id}/command/ota`
+
+（v1.0.1/ADJ-3：与命令命名空间一致，原 `{id}/ota` 写法已废止）
+
 **Payload**:
 ```json
 {
@@ -344,7 +399,10 @@
 
 ---
 
-## 8. Home Assistant MQTT Discovery
+## 8. Home Assistant MQTT Discovery（规划中，未实现）
+
+> **v1.0.1 / ADJ-10**：固件当前不发布 Discovery 配置。现行 HA 集成方案为
+> `ha/` 目录的手动 packages（见 ha/README.md）。以下为本节保留的规划设计。
 
 ### 8.1 设备实体配置
 
@@ -399,8 +457,7 @@
 sequenceDiagram
     ESP32->>MQTT: CONNECT (LWT设置为offline)
     ESP32->>MQTT: PUBLISH status=online
-    ESP32->>MQTT: PUBLISH homeassistant/.../config (Discovery)
-    ESP32->>MQTT: SUBSCRIBE command/#
+    ESP32->>MQTT: SUBSCRIBE fan-controller/{device_id}/command/# 与 config/#
     ESP32->>MQTT: PUBLISH sensor/bme280 (每秒)
     ESP32->>MQTT: PUBLISH fan/*/state (每秒)
 ```
@@ -475,7 +532,8 @@ Payload增加 `buffered: true` 标记：
 - 控制指令从REST API转换为MQTT PUBLISH
 
 ### Home Assistant侧
-- 固件启动后自动发布所有Discovery配置（重启HA后自动识别）
+- 现行方案为 `ha/` 手动 packages 配置（ha/README.md 安装步骤）
+- MQTT Discovery 自动发现为**规划项**，固件当前不发布 Discovery 配置（§8）
 - 实体 `unique_id` 必须全局唯一
 - `state_topic` 和 `command_topic` 必须匹配协议规范
 
@@ -483,9 +541,18 @@ Payload增加 `buffered: true` 标记：
 
 ## 12. 协议版本演进
 
-**v1.0** (当前):
+**v1.0** (2026-07-30):
 - 基础传感器/风扇/告警/OTA功能
-- Home Assistant Discovery支持
+
+**v1.0.1** (2026-08-25，模块整改 v1.2 修订，依据 docs/module-remediation-plan-v1.2.md §1 裁决表):
+- ADJ-3: OTA 触发 topic 统一为 `command/ota`（原 `{id}/ota` 废止）
+- ADJ-8: §5 补录 per-type retained 状态 topic `alert/{type}/state`
+- ADJ-5: §4.2 `temperature_source` 枚举 4 值（bme280/ds18b20_0/ds18b20_1/internal）
+- ADJ-9: §6 wifi/mqtt 配置标注"规划中，现行经 USB console 配置"
+- ADJ-10: §8/§11 Discovery 标注"规划中，现行方案为 ha/ 手动 packages"
+- ADJ-13: 风扇路数口径统一为 8 路（{index} 0-7）
+- ADJ-14: §5/§6.2 阈值示例改为双阈值模型（温度 75/80、12V 10.8-13.2、停转 duty>5%且<200RPM、WiFi 60s）
+- ADJ-6: §2.2 ds18b20 sensors[] 按 address/valid 匹配的口径确认（无效项也上报）
 
 **未来计划**:
 - v1.1: 增加风扇曲线配置历史记录
