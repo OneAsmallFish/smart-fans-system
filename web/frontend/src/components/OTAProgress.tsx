@@ -1,85 +1,70 @@
-// components/OTAProgress.tsx — OTA固件更新进度 + 确认对话框
-import { useState } from 'react'
-
+// components/OTAProgress.tsx — OTA 固件更新触发 + 真实进度（WEB-04/WEB-11）
+// 进度来自 MQTT ota/status（经后端 WebSocket 转发的 device.ota 字段）。
 interface Props {
   deviceId: string
   apiBase: string
   online: boolean
+  ota?: { state: string; progress_pct: number; message?: string }
 }
 
-type OTAState = 'idle' | 'pending' | 'started' | 'error'
-
-export function OTAProgress({ deviceId, apiBase, online }: Props) {
-  const [url,    setUrl]    = useState('')
-  const [state,  setState]  = useState<OTAState>('idle')
-  const [message,setMessage]= useState('')
-
-  const trigger = async () => {
-    if (!url.startsWith('https://')) {
-      setState('error')
-      setMessage('URL must start with https://')
-      return
-    }
-    setState('pending')
-    const r = await fetch(`${apiBase}/devices/${deviceId}/ota`, {
+export function OTAProgress({ deviceId, apiBase, online, ota }: Props) {
+  const trigger = async (e: React.SyntheticEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    const form = e.currentTarget
+    const url = (form.elements.namedItem('ota-url') as HTMLInputElement).value
+    if (!url.startsWith('https://')) return
+    await fetch(`${apiBase}/devices/${deviceId}/ota`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url }),
     })
-    const json = await r.json()
-    if (json.ok) {
-      setState('started')
-      setMessage('OTA started — device will reboot automatically when complete')
-    } else {
-      setState('error')
-      setMessage(json.error ?? 'Unknown error')
-    }
   }
 
-  const stateColor = { idle: '#3b82f6', pending: '#f59e0b',
-                       started: '#22c55e', error: '#ef4444' }[state]
-  const stateLabel = { idle: 'Flash OTA', pending: 'Sending…',
-                       started: '✓ Started', error: '✗ Failed' }[state]
+  const active = ota && ['downloading', 'verifying', 'flashing'].includes(ota.state)
+  const failed = ota?.state === 'failed'
+  const done   = ota?.state === 'success'
 
   return (
     <div>
       <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
         Firmware OTA Update
       </div>
-      <div style={{ display: 'flex', gap: 8 }}>
+      <form onSubmit={trigger} style={{ display: 'flex', gap: 8 }}>
         <input
+          name="ota-url"
           type="url" placeholder="https://your-server.com/firmware.bin"
-          value={url} onChange={e => { setUrl(e.target.value); setState('idle') }}
+          disabled={!!active}
           style={{
-            flex: 1, background: '#1f2937', border: '1px solid #374151',
+            flex: 1, background: '#111827', border: '1px solid #374151',
             color: 'white', borderRadius: 6, padding: '6px 10px', fontSize: 13,
           }}
         />
-        <button onClick={trigger} disabled={!online || state === 'pending'} style={{
+        <button type="submit" disabled={!online || !!active} style={{
           padding: '6px 16px', borderRadius: 6, fontSize: 13, cursor: 'pointer',
-          background: online && state !== 'pending' ? stateColor : '#374151',
+          background: !online || active ? '#374151' : '#7c3aed',
           color: 'white', border: 'none',
           opacity: !online ? 0.5 : 1,
         }}>
-          {stateLabel}
+          {active ? `${ota!.progress_pct}%` : 'Flash OTA'}
         </button>
-      </div>
-      {message && (
-        <p style={{ fontSize: 12, marginTop: 6,
-                    color: state === 'error' ? '#fca5a5' : '#86efac' }}>
-          {message}
-        </p>
-      )}
-      {state === 'started' && (
-        <div style={{
-          marginTop: 10, height: 4, background: '#1f2937',
-          borderRadius: 99, overflow: 'hidden',
-        }}>
+      </form>
+
+      {ota && (active || failed || done) && (
+        <div style={{ marginTop: 8 }}>
           <div style={{
-            height: '100%', background: '#22c55e',
-            animation: 'progress-indeterminate 1.5s infinite linear',
-            width: '40%',
-          }} />
+            height: 5, background: '#1f2937', borderRadius: 99, overflow: 'hidden',
+          }}>
+            <div style={{
+              height: '100%', borderRadius: 99,
+              width: `${ota.progress_pct}%`,
+              background: failed ? '#ef4444' : done ? '#22c55e' : '#7c3aed',
+              transition: 'width 0.4s ease',
+            }} />
+          </div>
+          <p style={{ fontSize: 12, marginTop: 5,
+                      color: failed ? '#fca5a5' : done ? '#86efac' : '#9ca3af' }}>
+            {ota.state}{ota.message ? ` — ${ota.message}` : ''} ({ota.progress_pct}%)
+          </p>
         </div>
       )}
     </div>

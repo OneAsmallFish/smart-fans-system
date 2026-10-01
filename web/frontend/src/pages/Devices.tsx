@@ -1,27 +1,13 @@
-// pages/Devices.tsx — 设备管理 + OTA固件更新 + 重启
+// pages/Devices.tsx — 设备管理 + OTA（WEB-11: 使用 components/OTAProgress，接真实进度）+ 重启
 import { useState } from 'react'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { OTAProgress } from '../components/OTAProgress'
 
-const API = `http://${window.location.hostname}:3001/api`
+const API = '/api'
 const WS_URL = `ws://${window.location.hostname}:3001`
 
 function DeviceRow({ d }: { d: ReturnType<typeof useWebSocket>['devices'][number] }) {
-  const [otaUrl, setOtaUrl] = useState('')
-  const [otaStatus, setOtaStatus] = useState('')
   const [confirming, setConfirming] = useState(false)
-
-  const triggerOTA = async () => {
-    if (!otaUrl.startsWith('https://')) {
-      setOtaStatus('URL must start with https://')
-      return
-    }
-    const r = await fetch(`${API}/devices/${d.deviceId}/ota`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: otaUrl }),
-    })
-    const json = await r.json()
-    setOtaStatus(json.ok ? '✓ OTA started — device will reboot when done' : `✗ ${json.error}`)
-  }
 
   const reboot = async () => {
     if (!confirming) { setConfirming(true); return }
@@ -50,24 +36,9 @@ function DeviceRow({ d }: { d: ReturnType<typeof useWebSocket>['devices'][number
         </div>
       </div>
 
-      {/* OTA */}
+      {/* OTA（真实进度：device.ota 来自 ota/status，WEB-04） */}
       <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Firmware OTA Update</div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <input
-            type="url" placeholder="https://your-server.com/firmware.bin"
-            value={otaUrl} onChange={e => setOtaUrl(e.target.value)}
-            style={{ flex: 1, background: '#111827', border: '1px solid #374151', color: 'white',
-                     borderRadius: 6, padding: '6px 10px', fontSize: 13 }}
-          />
-          <button onClick={triggerOTA} disabled={!d.online} style={{
-            padding: '6px 16px', borderRadius: 6, background: d.online ? '#7c3aed' : '#374151',
-            color: 'white', border: 'none', cursor: d.online ? 'pointer' : 'not-allowed', fontSize: 13,
-          }}>Flash OTA</button>
-        </div>
-        {otaStatus && <p style={{ fontSize: 12, marginTop: 6,
-                                  color: otaStatus.startsWith('✓') ? '#86efac' : '#fca5a5' }}>
-          {otaStatus}</p>}
+        <OTAProgress deviceId={d.deviceId} apiBase={API} online={d.online} ota={d.ota} />
       </div>
 
       {/* Reboot */}

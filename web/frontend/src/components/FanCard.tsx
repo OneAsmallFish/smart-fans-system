@@ -1,5 +1,7 @@
-// components/FanCard.tsx
-import { useState } from 'react'
+// components/FanCard.tsx — 单路风扇控制卡（WEB-11 复活）
+// WEB-08: 滑块值用 useEffect 同步设备推送的最新 duty（stale state 修复）；
+// 拖动结束提交逻辑保持。
+import { useEffect, useState } from 'react'
 
 interface FanState {
   fan_index: number
@@ -20,6 +22,16 @@ export function FanCard({ deviceId, fan, apiBase }: Props) {
   const [mode, setMode]  = useState<'auto' | 'manual'>(
     fan.mode === 'manual' ? 'manual' : 'auto',
   )
+
+  /* WEB-08: 设备推送的 duty 变化时同步滑块回显（本地拖动时以本地为准） */
+  useEffect(() => {
+    if (mode === 'auto') setDuty(fan.pwm_duty_pct)
+  }, [fan.pwm_duty_pct, mode])
+
+  /* mode 也跟随设备状态（其他入口可能切换模式） */
+  useEffect(() => {
+    setMode(fan.mode === 'manual' ? 'manual' : 'auto')
+  }, [fan.mode])
 
   const applySpeed = (val: number) =>
     fetch(`${apiBase}/devices/${deviceId}/fan/${fan.fan_index}`, {
@@ -42,7 +54,7 @@ export function FanCard({ deviceId, fan, apiBase }: Props) {
 
   return (
     <div style={{
-      background: '#111827', borderRadius: 10, padding: '12px 16px',
+      background: '#1e2030', borderRadius: 10, padding: '12px 16px',
       flex: '1 1 160px', minWidth: 160,
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between',
@@ -54,7 +66,7 @@ export function FanCard({ deviceId, fan, apiBase }: Props) {
           )}
           <button onClick={toggleMode} style={{
             padding: '2px 8px', borderRadius: 99, fontSize: 11, cursor: 'pointer',
-            background: mode === 'auto' ? '#14532d' : '#1e3a5f', border: 'none',
+            background: mode === 'auto' ? '#166534' : '#1e40af', border: 'none',
             color: mode === 'auto' ? '#86efac' : '#93c5fd',
           }}>
             {mode === 'auto' ? 'AUTO' : 'MANUAL'}
@@ -62,7 +74,7 @@ export function FanCard({ deviceId, fan, apiBase }: Props) {
         </div>
       </div>
 
-      <div style={{ fontSize: 24, fontWeight: 800, textAlign: 'center',
+      <div style={{ fontSize: 22, fontWeight: 800, textAlign: 'center',
                     color: fan.stalled ? '#ef4444' : '#f9fafb' }}>
         {fan.rpm} <span style={{ fontSize: 12, fontWeight: 400, color: '#9ca3af' }}>RPM</span>
       </div>
@@ -72,6 +84,7 @@ export function FanCard({ deviceId, fan, apiBase }: Props) {
         disabled={mode === 'auto'}
         onChange={e => setDuty(Number(e.target.value))}
         onMouseUp={() => mode === 'manual' && applySpeed(duty)}
+        onTouchEnd={() => mode === 'manual' && applySpeed(duty)}
         style={{
           width: '100%', marginTop: 8, accentColor: '#3b82f6',
           cursor: mode === 'auto' ? 'not-allowed' : 'pointer', opacity: mode === 'auto' ? 0.5 : 1,

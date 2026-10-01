@@ -1,7 +1,9 @@
 // src/routes/devices.ts — REST API 端点 (Zod 校验 + 统一响应)
+// WEB-05: alert 端点改发 config/alert（协议 §6.2，原 command/alert 不存在）；
+// CurveSchema pid 字段平铺（ADJ-4）+ temperature_source 枚举（ADJ-5）。
 import { Router } from 'express'
 import { z } from 'zod'
-import { getDevices, publishCommand } from '../mqtt.js'
+import { getDevices, publishCommand, publishConfig } from '../mqtt.js'
 
 const router = Router()
 
@@ -28,11 +30,18 @@ router.get('/:id', (req, res) => {
   res.json(ok(device))
 })
 
-// GET /api/devices/:id/history — placeholder (data from Flash logs via USB)
+// GET /api/devices/:id/history — WEB-10: 占位实现，明确标注"未接通"
+// （接通 agent/固件 Flash 日志通道为规划项；前端 History 页有对应提示）
 router.get('/:id/history', (req, res) => {
   const { from, to } = req.query
-  // In production: query Go Agent which reads from ESP32 NVS/Flash
-  res.json(ok({ deviceId: req.params.id, from, to, entries: [] }))
+  res.json(ok({
+    deviceId: req.params.id,
+    from,
+    to,
+    entries: [],
+    stub: true,
+    note: 'not wired: history source (ESP32 flash logs / agent channel) is not connected yet',
+  }))
 })
 
 // POST /api/devices/:id/fan/:fanIdx  { speed: 0-100 }
@@ -49,39 +58,64 @@ router.post('/:id/fan/:fanIdx', (req, res) => {
 })
 
 // POST /api/devices/:id/fan/:fanIdx/curve
+// ADJ-4: PID 字段平铺在 payload 顶层（kp/ki/kd/setpoint_c）
+// ADJ-5: temperature_source 限 4 个合法字符串
+const TEMP_SOURCES = ['bme280', 'ds18b20_0', 'ds18b20_1', 'internal'] as const
 const CurveSchema = z.object({
   mode: z.enum(['lut', 'pid']),
-  temperature_source: z.string().optional(),
-  points: z.array(z.object({ temp_c: z.number(), duty_pct: z.number().int() })).optional(),
-  pid: z.object({ kp: z.number(), ki: z.number(), kd: z.number(), setpoint_c: z.number() }).optional(),
+  temperature_source: z.enum(TEMP_SOURCES).optional(),
+  points: z.array(z.object({
+    temp_c: z.number(),
+    duty_pct: z.number().int().min(0).max(100),
+  })).max(10).optional(),
+  kp: z.number().optional(),
+  ki: z.number().optional(),
+  kd: z.number().optional(),
+  setpoint_c: z.number().optional(),
 })
 router.post('/:id/fan/:fanIdx/curve', (req, res) => {
   const parsed = CurveSchema.safeParse(req.body)
   if (!parsed.success) return send(res, fail(parsed.error.message))
+  const { points, ...rest } = parsed.data
   publishCommand(req.params.id, 'curve', {
     fan_index: parseInt(req.params.fanIdx),
     timestamp: Math.floor(Date.now() / 1000),
-    ...parsed.data,
+    ...rest,
+    ...(points ? { points: points.map(p => ({
+      temp_c: p.temp_c,
+      duty_pct: Math.max(0, Math.min(100, p.duty_pct)),
+    })) } : {}),
   })
   res.json(ok({ applied: true }))
 })
 
 // POST /api/devices/:id/alert  { rules: [...] }
+// WEB-05/ADJ-14: 双阈值模型，发往 config/alert（协议 §6.2）
 const AlertSchema = z.object({
   rules: z.array(z.object({
-    type: z.string(),
-    threshold: z.number().optional(),
+    type: z.enum(['temperature_high', 'fan_stall', 'voltage_abnormal', 'wifi_disconnected']),
+    threshold: z.number().optional(),   // 单阈值维度（stall_rpm / wifi timeout_s）
+    warn_c: z.number().optional(),      // 温度双阈值
+    crit_c: z.number().optional(),
+    '12v_min': z.number().optional(),   // 电压窗口
+    '12v_max': z.number().optional(),
     enabled: z.boolean(),
   })),
 })
 router.post('/:id/alert', (req, res) => {
   const parsed = AlertSchema.safeParse(req.body)
   if (!parsed.success) return send(res, fail(parsed.error.message))
-  publishCommand(req.params.id, 'alert', {
+  publishConfig(req.params.id, 'alert', {
     timestamp: Math.floor(Date.now() / 1000),
     rules: parsed.data.rules,
   })
   res.json(ok({ applied: true }))
+})
+
+// POST /api/devices/:id/alert/get — 回读当前告警阈值（config/alert get，FW-20④）
+router.post('/:id/alert/get', (req, res) => {
+  const published = publishConfig(req.params.id, 'alert', { get: true })
+  res.json(ok({ requested: published }))
 })
 
 // POST /api/devices/:id/ota  { url: "https://..." }

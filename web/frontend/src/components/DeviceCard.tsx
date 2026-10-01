@@ -53,12 +53,12 @@ export function DeviceCard({ device: d }: Props) {
         </div>
       )}
 
-      {/* Temperature row */}
+      {/* Temperature row（DS18B20 按 address 标识，ADJ-6） */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
         {bme && <TemperatureGauge temp={bme.temperature_c} label="BME280" />}
         {d.sensors.ds18b20?.map(s => (
-          <TemperatureGauge key={s.index} temp={s.temperature_c}
-                            label={`DS18B20-${s.index}`} />
+          <TemperatureGauge key={s.address} temp={s.temperature_c}
+                            label={`DS ${s.address.slice(-4)}`} />
         ))}
         {d.sensors.internal_temp !== undefined && (
           <TemperatureGauge temp={d.sensors.internal_temp} label="MCU" maxTemp={90} />

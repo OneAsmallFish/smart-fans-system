@@ -1,4 +1,10 @@
 // src/types.ts — 共享类型定义
+// v1.2: 8 路风扇（WEB-03/ADJ-13）；告警 schema 对齐协议 §5（字符串
+// alert_type + severity + sensor，WEB-06/ADJ-2）；DS18B20 按 address 匹配。
+
+/** 风扇路数（硬件决策 D2，全项目唯一基准） */
+export const FAN_COUNT = 8
+
 export interface SensorBME280 {
   temperature_c: number
   humidity_pct: number
@@ -7,7 +13,8 @@ export interface SensorBME280 {
 }
 
 export interface SensorDS18B20 {
-  index: number
+  address: string
+  valid: boolean
   temperature_c: number
 }
 
@@ -25,12 +32,27 @@ export interface FanState {
   mode: 'auto' | 'manual'
 }
 
+/** 协议 §5: alert_type 为字符串枚举 */
+export type AlertType = 'temperature_high' | 'fan_stall' | 'voltage_abnormal' | 'wifi_disconnected'
+export type AlertSeverity = 'normal' | 'warning' | 'critical'
+
 export interface AlertEvent {
   timestamp: number
-  alert_type: number
+  device_id?: string
+  alert_type: AlertType | string
+  severity: AlertSeverity | string
   message: string
   value: number
   threshold: number
+  sensor?: string
+}
+
+/** 协议 §7: OTA 状态反馈（WEB-04） */
+export interface OTAStatus {
+  timestamp?: number
+  state: 'downloading' | 'verifying' | 'flashing' | 'success' | 'failed' | string
+  progress_pct: number
+  message?: string
 }
 
 export interface DeviceState {
@@ -47,4 +69,5 @@ export interface DeviceState {
   }
   fans: FanState[]
   alerts: AlertEvent[]
+  ota?: OTAStatus
 }

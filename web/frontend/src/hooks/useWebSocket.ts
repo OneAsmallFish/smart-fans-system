@@ -1,4 +1,6 @@
 // src/hooks/useWebSocket.ts — WebSocket 实时数据 Hook
+// 类型对齐 v1.2：severity/alert_type 字符串（WEB-06）、ota 进度（WEB-04）、
+// ds18b20 address 匹配（ADJ-6）。
 import { useEffect, useRef, useState, useCallback } from 'react'
 
 export interface DeviceSummary {
@@ -8,15 +10,23 @@ export interface DeviceSummary {
   firmware?: string
   ipAddress?: string
   sensors: {
-    bme280?: { temperature_c: number; humidity_pct: number; pressure_hpa: number }
-    ds18b20?: Array<{ index: number; temperature_c: number }>
+    bme280?: { temperature_c: number; humidity_pct: number; pressure_hpa: number; timestamp?: number }
+    ds18b20?: Array<{ address: string; valid: boolean; temperature_c: number }>
     voltage?: { voltage_12v: number; voltage_5v: number; voltage_3v3: number }
     internal_temp?: number
   }
   fans: Array<{
     fan_index: number; pwm_duty_pct: number; rpm: number; stalled: boolean; mode: string
   }>
-  alerts: Array<{ timestamp: number; alert_type: number; message: string; value: number }>
+  alerts: Array<{
+    timestamp: number
+    alert_type: string
+    severity: string
+    message: string
+    value: number
+    sensor?: string
+  }>
+  ota?: { state: string; progress_pct: number; message?: string }
 }
 
 export function useWebSocket(url: string) {
