@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # test/e2e/integration_test.sh — 固件 ↔ Go Agent ↔ MQTT 集成测试
 # 验证 MQTT 数据流的双向协议合规性
+# ⚠️ 必须从仓库根目录运行；需要真机固件 + 本地 broker
 
 set -euo pipefail
 
@@ -9,8 +10,9 @@ TOPIC_PREFIX="fan-controller"
 TIMEOUT=10
 PASS=0; FAIL=0
 
-pass() { echo "[PASS] $1"; ((PASS++)); }
-fail() { echo "[FAIL] $1"; ((FAIL++)); }
+# TST-01: set -e 下 bash 双括号自增会在结果为 0 时触发 ERR_EXIT —— 改用算术展开
+pass() { echo "[PASS] $1"; PASS=$((PASS+1)); }
+fail() { echo "[FAIL] $1"; FAIL=$((FAIL+1)); }
 
 echo "=== Firmware ↔ Go Agent ↔ MQTT Integration Test ==="
 echo "Broker: ${BROKER}"
@@ -54,18 +56,43 @@ rm -f "${T_OUT}"
 T_OUT=$(mktemp)
 timeout ${TIMEOUT} mosquitto_sub -h "${BROKER}" \
   -t "${TOPIC_PREFIX}/+/fan/0/state" -C 1 --quiet > "${T_OUT}" 2>/dev/null || true
-[ -s "${T_OUT}" ] \
-  && pass "T3: Fan 0 state data received" \
-  || fail "T3: No fan state data in ${TIMEOUT}s"
+if [ -s "${T_OUT}" ]; then
+  MSG=$(cat "${T_OUT}")
+  for field in "pwm_duty_pct" "rpm" "mode"; do
+    echo "${MSG}" | grep -q "\"${field}\"" \
+      && pass "T3: fan state has field '${field}'" \
+      || fail "T3: fan state missing '${field}'"
+  done
+else
+  fail "T3: No fan state data in ${TIMEOUT}s"
+fi
 rm -f "${T_OUT}"
 
-# Test 4: Command relay — send fan control, verify device receives
+# Test 4: Command relay — TST-02: 真正订阅捕获 payload 并断言字段
+# （原实现只发布不校验，且 mktemp 的 T_OUT 创建后未读）
 T_OUT=$(mktemp)
-# Publish command (simulating Go Agent forwarding from API)
+mosquitto_sub -h "${BROKER}" \
+  -t "${TOPIC_PREFIX}/test/command/fan" -C 1 --quiet > "${T_OUT}" 2>/dev/null &
+SUB_PID=$!
+sleep 0.5
 mosquitto_pub -h "${BROKER}" -t "${TOPIC_PREFIX}/test/command/fan" \
-  -m '{"fan_index":0,"mode":"manual","duty_pct":75,"timestamp":0}' 2>/dev/null \
-  && pass "T4: Fan control command published to MQTT" \
-  || fail "T4: Failed to publish command"
+  -m '{"fan_index":0,"mode":"manual","duty_pct":75,"timestamp":0}' 2>/dev/null
+sleep 1
+kill ${SUB_PID} 2>/dev/null || true
+wait ${SUB_PID} 2>/dev/null || true
+
+if [ -s "${T_OUT}" ]; then
+  MSG=$(cat "${T_OUT}")
+  T4_OK=true
+  for field in '"fan_index":0' '"duty_pct":75' '"mode":"manual"'; do
+    echo "${MSG}" | grep -q "${field}" || T4_OK=false
+  done
+  [ "${T4_OK}" = true ] \
+    && pass "T4: fan control command published AND payload fields asserted" \
+    || fail "T4: command payload field mismatch: ${MSG}"
+else
+  fail "T4: command payload not captured"
+fi
 rm -f "${T_OUT}"
 
 # Test 5: Voltage data format
