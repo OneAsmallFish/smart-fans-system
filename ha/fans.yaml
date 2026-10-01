@@ -1,37 +1,158 @@
-# ha/fans.yaml — 风扇控制实体 (HA Fan 组件)
+# ha/fans.yaml — 风扇控制实体 (HA MQTT fan 组件, 8 路)
+# HA-01: __DEVICE_ID__ 为显眼占位符，安装时必须替换（见 ha/README.md）
+# HA-02: 8 路风扇（v1.2 硬件决策 D2）
+# HA-05: availability 联动设备 LWT status topic
 mqtt:
   fan:
     - name: "Fan 0"
       unique_id: "fan_ctrl_fan0"
-      command_topic: "fan-controller/esp32-placeholder/command/fan"
+      command_topic: "fan-controller/__DEVICE_ID__/command/fan"
       payload_on: >
         {"fan_index":0,"mode":"manual","duty_pct":100,"timestamp":0}
       payload_off: >
         {"fan_index":0,"mode":"manual","duty_pct":0,"timestamp":0}
-      percentage_command_topic: "fan-controller/esp32-placeholder/command/fan"
+      percentage_command_topic: "fan-controller/__DEVICE_ID__/command/fan"
       percentage_command_template: >
         {"fan_index":0,"mode":"manual","duty_pct":{{ value }},"timestamp":0}
-      percentage_state_topic: "fan-controller/+/fan/0/state"
+      percentage_state_topic: "fan-controller/__DEVICE_ID__/fan/0/state"
       percentage_value_template: "{{ value_json.pwm_duty_pct }}"
       speed_range_min: 0
       speed_range_max: 100
+      availability_topic: "fan-controller/__DEVICE_ID__/status"
+      availability_template: "{{ 'online' if value_json.status == 'online' else 'offline' }}"
       device:
-        identifiers: ["fan_ctrl_esp32"]
+        identifiers: ["fan_ctrl___DEVICE_ID__"]
         name: "Smart Fan Controller"
 
     - name: "Fan 1"
       unique_id: "fan_ctrl_fan1"
-      command_topic: "fan-controller/esp32-placeholder/command/fan"
+      command_topic: "fan-controller/__DEVICE_ID__/command/fan"
       payload_on: >
         {"fan_index":1,"mode":"manual","duty_pct":100,"timestamp":0}
       payload_off: >
         {"fan_index":1,"mode":"manual","duty_pct":0,"timestamp":0}
-      percentage_command_topic: "fan-controller/esp32-placeholder/command/fan"
+      percentage_command_topic: "fan-controller/__DEVICE_ID__/command/fan"
       percentage_command_template: >
         {"fan_index":1,"mode":"manual","duty_pct":{{ value }},"timestamp":0}
-      percentage_state_topic: "fan-controller/+/fan/1/state"
+      percentage_state_topic: "fan-controller/__DEVICE_ID__/fan/1/state"
       percentage_value_template: "{{ value_json.pwm_duty_pct }}"
       speed_range_min: 0
       speed_range_max: 100
+      availability_topic: "fan-controller/__DEVICE_ID__/status"
+      availability_template: "{{ 'online' if value_json.status == 'online' else 'offline' }}"
       device:
-        identifiers: ["fan_ctrl_esp32"]
+        identifiers: ["fan_ctrl___DEVICE_ID__"]
+
+    - name: "Fan 2"
+      unique_id: "fan_ctrl_fan2"
+      command_topic: "fan-controller/__DEVICE_ID__/command/fan"
+      payload_on: >
+        {"fan_index":2,"mode":"manual","duty_pct":100,"timestamp":0}
+      payload_off: >
+        {"fan_index":2,"mode":"manual","duty_pct":0,"timestamp":0}
+      percentage_command_topic: "fan-controller/__DEVICE_ID__/command/fan"
+      percentage_command_template: >
+        {"fan_index":2,"mode":"manual","duty_pct":{{ value }},"timestamp":0}
+      percentage_state_topic: "fan-controller/__DEVICE_ID__/fan/2/state"
+      percentage_value_template: "{{ value_json.pwm_duty_pct }}"
+      speed_range_min: 0
+      speed_range_max: 100
+      availability_topic: "fan-controller/__DEVICE_ID__/status"
+      availability_template: "{{ 'online' if value_json.status == 'online' else 'offline' }}"
+      device:
+        identifiers: ["fan_ctrl___DEVICE_ID__"]
+
+    - name: "Fan 3"
+      unique_id: "fan_ctrl_fan3"
+      command_topic: "fan-controller/__DEVICE_ID__/command/fan"
+      payload_on: >
+        {"fan_index":3,"mode":"manual","duty_pct":100,"timestamp":0}
+      payload_off: >
+        {"fan_index":3,"mode":"manual","duty_pct":0,"timestamp":0}
+      percentage_command_topic: "fan-controller/__DEVICE_ID__/command/fan"
+      percentage_command_template: >
+        {"fan_index":3,"mode":"manual","duty_pct":{{ value }},"timestamp":0}
+      percentage_state_topic: "fan-controller/__DEVICE_ID__/fan/3/state"
+      percentage_value_template: "{{ value_json.pwm_duty_pct }}"
+      speed_range_min: 0
+      speed_range_max: 100
+      availability_topic: "fan-controller/__DEVICE_ID__/status"
+      availability_template: "{{ 'online' if value_json.status == 'online' else 'offline' }}"
+      device:
+        identifiers: ["fan_ctrl___DEVICE_ID__"]
+
+    - name: "Fan 4"
+      unique_id: "fan_ctrl_fan4"
+      command_topic: "fan-controller/__DEVICE_ID__/command/fan"
+      payload_on: >
+        {"fan_index":4,"mode":"manual","duty_pct":100,"timestamp":0}
+      payload_off: >
+        {"fan_index":4,"mode":"manual","duty_pct":0,"timestamp":0}
+      percentage_command_topic: "fan-controller/__DEVICE_ID__/command/fan"
+      percentage_command_template: >
+        {"fan_index":4,"mode":"manual","duty_pct":{{ value }},"timestamp":0}
+      percentage_state_topic: "fan-controller/__DEVICE_ID__/fan/4/state"
+      percentage_value_template: "{{ value_json.pwm_duty_pct }}"
+      speed_range_min: 0
+      speed_range_max: 100
+      availability_topic: "fan-controller/__DEVICE_ID__/status"
+      availability_template: "{{ 'online' if value_json.status == 'online' else 'offline' }}"
+      device:
+        identifiers: ["fan_ctrl___DEVICE_ID__"]
+
+    - name: "Fan 5"
+      unique_id: "fan_ctrl_fan5"
+      command_topic: "fan-controller/__DEVICE_ID__/command/fan"
+      payload_on: >
+        {"fan_index":5,"mode":"manual","duty_pct":100,"timestamp":0}
+      payload_off: >
+        {"fan_index":5,"mode":"manual","duty_pct":0,"timestamp":0}
+      percentage_command_topic: "fan-controller/__DEVICE_ID__/command/fan"
+      percentage_command_template: >
+        {"fan_index":5,"mode":"manual","duty_pct":{{ value }},"timestamp":0}
+      percentage_state_topic: "fan-controller/__DEVICE_ID__/fan/5/state"
+      percentage_value_template: "{{ value_json.pwm_duty_pct }}"
+      speed_range_min: 0
+      speed_range_max: 100
+      availability_topic: "fan-controller/__DEVICE_ID__/status"
+      availability_template: "{{ 'online' if value_json.status == 'online' else 'offline' }}"
+      device:
+        identifiers: ["fan_ctrl___DEVICE_ID__"]
+
+    - name: "Fan 6"
+      unique_id: "fan_ctrl_fan6"
+      command_topic: "fan-controller/__DEVICE_ID__/command/fan"
+      payload_on: >
+        {"fan_index":6,"mode":"manual","duty_pct":100,"timestamp":0}
+      payload_off: >
+        {"fan_index":6,"mode":"manual","duty_pct":0,"timestamp":0}
+      percentage_command_topic: "fan-controller/__DEVICE_ID__/command/fan"
+      percentage_command_template: >
+        {"fan_index":6,"mode":"manual","duty_pct":{{ value }},"timestamp":0}
+      percentage_state_topic: "fan-controller/__DEVICE_ID__/fan/6/state"
+      percentage_value_template: "{{ value_json.pwm_duty_pct }}"
+      speed_range_min: 0
+      speed_range_max: 100
+      availability_topic: "fan-controller/__DEVICE_ID__/status"
+      availability_template: "{{ 'online' if value_json.status == 'online' else 'offline' }}"
+      device:
+        identifiers: ["fan_ctrl___DEVICE_ID__"]
+
+    - name: "Fan 7"
+      unique_id: "fan_ctrl_fan7"
+      command_topic: "fan-controller/__DEVICE_ID__/command/fan"
+      payload_on: >
+        {"fan_index":7,"mode":"manual","duty_pct":100,"timestamp":0}
+      payload_off: >
+        {"fan_index":7,"mode":"manual","duty_pct":0,"timestamp":0}
+      percentage_command_topic: "fan-controller/__DEVICE_ID__/command/fan"
+      percentage_command_template: >
+        {"fan_index":7,"mode":"manual","duty_pct":{{ value }},"timestamp":0}
+      percentage_state_topic: "fan-controller/__DEVICE_ID__/fan/7/state"
+      percentage_value_template: "{{ value_json.pwm_duty_pct }}"
+      speed_range_min: 0
+      speed_range_max: 100
+      availability_topic: "fan-controller/__DEVICE_ID__/status"
+      availability_template: "{{ 'online' if value_json.status == 'online' else 'offline' }}"
+      device:
+        identifiers: ["fan_ctrl___DEVICE_ID__"]

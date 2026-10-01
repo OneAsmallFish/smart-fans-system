@@ -1,4 +1,4 @@
-# ha/README.md — Home Assistant 集成步骤
+# ha/README.md — Home Assistant 集成步骤（手动 packages 方案）
 
 # Smart Fan Controller — Home Assistant 集成指南
 
@@ -10,68 +10,66 @@
 
 ---
 
-## 集成方法：MQTT Discovery（自动发现）
+## 集成方法：手动 packages（ha/ 目录）
 
-固件启动后会自动向 MQTT Broker 发布 Discovery 消息，HA 会自动创建所有传感器和控制实体。**无需手动配置**。
+> **说明**：固件当前**不实现** MQTT Discovery 自动发现（规划中）。
+> 集成方式为手动 packages —— 将 `ha/` 目录的 YAML 放入 HA 配置。
 
 ### 步骤
 
-1. **安装 Mosquitto broker 插件**（HA → 设置 → 插件 → Mosquitto broker）
+1. **获取 device_id**（二选一）：
+   - 订阅设备状态 topic，等一条 retained 消息：
+     ```bash
+     mosquitto_sub -t 'fan-controller/+/status' -v   # 输出里的 esp32-XXXXXX 即 device_id
+     ```
+   - 或查看固件启动日志（USB-CDC 串口）：`Device ID: esp32-XXXXXX`
 
-2. **在 MQTT 配置中启用 Discovery**（默认已启用）：
-   ```yaml
-   # configuration.yaml
-   mqtt:
-     discovery: true
-     discovery_prefix: homeassistant
+2. **获取 DS18B20 探头地址**（用于 sensors.yaml 的两个探头实体）：
+   ```bash
+   mosquitto_sub -t 'fan-controller/<device_id>/sensor/ds18b20' -v
+   # payload 中 sensors[].address 形如 "28-a1b2c3d4e5f6"
    ```
 
-3. **重启 Home Assistant**
+3. **替换占位符并部署**（在仓库根执行）：
+   ```bash
+   mkdir -p /config/packages/fan-controller
+   sed -e 's/__DEVICE_ID__/<你的device_id>/g' \
+       -e 's/__DS_ADDR_0__/<探头0地址>/g' \
+       -e 's/__DS_ADDR_1__/<探头1地址>/g' \
+       ha/fans.yaml ha/alerts.yaml ha/sensors.yaml \
+       > /dev/null   # 先 dry-run 确认，或直接逐文件输出：
+   # cp 到 HA 配置目录：
+   cp ha/fans.yaml ha/alerts.yaml ha/sensors.yaml /config/packages/fan-controller/
+   # 然后在 HA 宿主机上执行 sed 批量替换：
+   sed -i -e 's/__DEVICE_ID__/esp32-a1b2c3/g' \
+          -e 's/__DS_ADDR_0__/28-xxxxxxxxxxxx/g' \
+          -e 's/__DS_ADDR_1__/28-yyyyyyyyyyyy/g' \
+          /config/packages/fan-controller/*.yaml
+   ```
 
-4. **等待设备上线**：设备上电后约30秒内，HA 集成 → MQTT 会自动显示以下实体：
-   - 温度/湿度/气压（BME280）
-   - DS18B20 远程温度探头
-   - 12V/5V 电压监控
-   - 风扇 0-3 转速（RPM）
-   - 风扇 0-3 转速控制（0-100%）
-   - 告警二进制传感器（温度/停转/电压/在线状态）
+4. **在 configuration.yaml 中启用 packages**：
+   ```yaml
+   homeassistant:
+     packages:
+       fan_controller: !include_dir_named packages/fan-controller
+   ```
 
----
+5. **重启 Home Assistant**，实体生效：
+   - 温度/湿度/气压（BME280）×3 + DS18B20 探头 ×2 + MCU 温度 ×1
+   - 12V / 5V / 3.3V 电压监控 ×3
+   - 风扇 0-7 转速（RPM）×8
+   - 风扇 0-7 转速控制（0-100%）×8
+   - 告警二进制传感器 ×4（温度/停转/电压/WiFi）+ 设备在线 ×1
 
-## 手动配置（备选方案）
-
-如果自动发现未生效，可手动将 `ha/` 目录下的 YAML 文件放置到 HA 配置目录：
-
-```bash
-# 在 HA 宿主机上
-cp ha/*.yaml /config/packages/fan-controller/
-```
-
-然后在 `configuration.yaml` 中添加：
-```yaml
-homeassistant:
-  packages:
-    fan_controller: !include_dir_named packages/fan-controller
-```
-
-重启 HA 后实体生效。
-
----
-
-## 小爱同学语音控制（V2 增强项）
-
-通过巴法云 MQTT 桥接实现（不包含在当前版本）：
-
-```
-HA 自动化 → 巴法云 MQTT → 小爱同学技能
-```
+> ⚠️ **必须替换 `__DEVICE_ID__`**：固件按具体 device_id 订阅命令（不做通配订阅），
+> 不替换的 HA 配置将无法控制设备。旧的隐性占位 device_id 已废弃。
 
 ---
 
 ## 告警自动化示例
 
 ```yaml
-# 温度过高时发送通知 + 设置所有风扇100%
+# 温度过高时发送通知
 automation:
   - alias: "Fan Controller High Temperature"
     trigger:
@@ -83,3 +81,9 @@ automation:
         data:
           message: "服务器温度过高！检查风扇控制器。"
 ```
+
+---
+
+## MQTT Discovery（规划中）
+
+自动发现为规划功能（protocol.md §8）；当前方案为上述手动 packages。

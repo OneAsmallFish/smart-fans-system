@@ -1,46 +1,55 @@
 # ha/alerts.yaml — 告警二进制传感器
+# HA-03/ADJ-8: 每类告警订阅独立的 per-type retained 状态 topic
+#   fan-controller/{id}/alert/{type}/state，payload {active, severity, timestamp}，
+#   按 value_json.active 判定 —— 四实体互不干扰（不再共用 +/alert 事件 topic）。
+# HA-05: availability 联动 LWT status topic。
 mqtt:
   binary_sensor:
     - name: "Fan Controller Temperature Alert"
       unique_id: "fan_ctrl_alert_temp"
-      state_topic: "fan-controller/+/alert"
-      value_template: >
-        {{ 'ON' if value_json.alert_type == 0 else 'OFF' }}
-      payload_on: "ON"
-      payload_off: "OFF"
+      state_topic: "fan-controller/__DEVICE_ID__/alert/temperature_high/state"
+      value_template: "{{ 'ON' if value_json.active else 'OFF' }}"
+      availability_topic: "fan-controller/__DEVICE_ID__/status"
+      availability_template: "{{ 'online' if value_json.status == 'online' else 'offline' }}"
       device_class: heat
       device:
-        identifiers: ["fan_ctrl_esp32"]
+        identifiers: ["fan_ctrl___DEVICE_ID__"]
 
     - name: "Fan Stall Alert"
       unique_id: "fan_ctrl_alert_stall"
-      state_topic: "fan-controller/+/alert"
-      value_template: >
-        {{ 'ON' if value_json.alert_type == 1 else 'OFF' }}
-      payload_on: "ON"
-      payload_off: "OFF"
+      state_topic: "fan-controller/__DEVICE_ID__/alert/fan_stall/state"
+      value_template: "{{ 'ON' if value_json.active else 'OFF' }}"
+      availability_topic: "fan-controller/__DEVICE_ID__/status"
+      availability_template: "{{ 'online' if value_json.status == 'online' else 'offline' }}"
       device_class: problem
       device:
-        identifiers: ["fan_ctrl_esp32"]
+        identifiers: ["fan_ctrl___DEVICE_ID__"]
 
     - name: "Fan Controller Voltage Alert"
       unique_id: "fan_ctrl_alert_voltage"
-      state_topic: "fan-controller/+/alert"
-      value_template: >
-        {{ 'ON' if value_json.alert_type == 2 else 'OFF' }}
-      payload_on: "ON"
-      payload_off: "OFF"
+      state_topic: "fan-controller/__DEVICE_ID__/alert/voltage_abnormal/state"
+      value_template: "{{ 'ON' if value_json.active else 'OFF' }}"
+      availability_topic: "fan-controller/__DEVICE_ID__/status"
+      availability_template: "{{ 'online' if value_json.status == 'online' else 'offline' }}"
       device_class: problem
       device:
-        identifiers: ["fan_ctrl_esp32"]
+        identifiers: ["fan_ctrl___DEVICE_ID__"]
+
+    - name: "Fan Controller WiFi Alert"
+      unique_id: "fan_ctrl_alert_wifi"
+      state_topic: "fan-controller/__DEVICE_ID__/alert/wifi_disconnected/state"
+      value_template: "{{ 'ON' if value_json.active else 'OFF' }}"
+      availability_topic: "fan-controller/__DEVICE_ID__/status"
+      availability_template: "{{ 'online' if value_json.status == 'online' else 'offline' }}"
+      device_class: connectivity
+      device:
+        identifiers: ["fan_ctrl___DEVICE_ID__"]
 
     - name: "Fan Controller Online"
       unique_id: "fan_ctrl_online"
-      state_topic: "fan-controller/+/status"
+      state_topic: "fan-controller/__DEVICE_ID__/status"
       value_template: >
         {{ 'ON' if value_json.status == 'online' else 'OFF' }}
-      payload_on: "ON"
-      payload_off: "OFF"
       device_class: connectivity
       device:
-        identifiers: ["fan_ctrl_esp32"]
+        identifiers: ["fan_ctrl___DEVICE_ID__"]

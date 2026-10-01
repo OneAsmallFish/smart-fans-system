@@ -1,122 +1,223 @@
-# ha/sensors.yaml — Home Assistant MQTT 传感器自动发现配置
-# 上线后设备自动通过 MQTT Discovery 在 HA 中创建以下实体
-
+# ha/sensors.yaml — Home Assistant MQTT 传感器（手动 packages 配置）
+# HA-01: __DEVICE_ID__ / __DS_ADDR_0__ / __DS_ADDR_1__ 为占位符，安装时替换（见 ha/README.md）
+# HA-04: DS18B20 按 ROM address 匹配（不再按数组位置）；补第二探头与 3.3V 实体
+# HA-05: 全部实体 availability 联动 LWT status topic
 mqtt:
   sensor:
     # BME280 温度
     - name: "Fan Controller Temperature"
       unique_id: "fan_ctrl_bme280_temp"
-      state_topic: "fan-controller/+/sensor/bme280"
+      state_topic: "fan-controller/__DEVICE_ID__/sensor/bme280"
       value_template: "{{ value_json.temperature_c }}"
       unit_of_measurement: "°C"
       device_class: temperature
       state_class: measurement
+      availability_topic: "fan-controller/__DEVICE_ID__/status"
+      availability_template: "{{ 'online' if value_json.status == 'online' else 'offline' }}"
       device:
-        identifiers: ["fan_ctrl_esp32"]
+        identifiers: ["fan_ctrl___DEVICE_ID__"]
         name: "Smart Fan Controller"
         model: "ESP32-S3-N16R8"
         manufacturer: "DIY"
-        sw_version: "v1.0.0"
+        sw_version: "v1.0.1"
 
     # BME280 湿度
     - name: "Fan Controller Humidity"
       unique_id: "fan_ctrl_bme280_hum"
-      state_topic: "fan-controller/+/sensor/bme280"
+      state_topic: "fan-controller/__DEVICE_ID__/sensor/bme280"
       value_template: "{{ value_json.humidity_pct }}"
       unit_of_measurement: "%"
       device_class: humidity
       state_class: measurement
+      availability_topic: "fan-controller/__DEVICE_ID__/status"
+      availability_template: "{{ 'online' if value_json.status == 'online' else 'offline' }}"
       device:
-        identifiers: ["fan_ctrl_esp32"]
+        identifiers: ["fan_ctrl___DEVICE_ID__"]
 
     # BME280 气压
     - name: "Fan Controller Pressure"
       unique_id: "fan_ctrl_bme280_press"
-      state_topic: "fan-controller/+/sensor/bme280"
+      state_topic: "fan-controller/__DEVICE_ID__/sensor/bme280"
       value_template: "{{ value_json.pressure_hpa }}"
       unit_of_measurement: "hPa"
       device_class: atmospheric_pressure
       state_class: measurement
+      availability_topic: "fan-controller/__DEVICE_ID__/status"
+      availability_template: "{{ 'online' if value_json.status == 'online' else 'offline' }}"
       device:
-        identifiers: ["fan_ctrl_esp32"]
+        identifiers: ["fan_ctrl___DEVICE_ID__"]
 
-    # DS18B20 远程探头 0
+    # DS18B20 远程探头 0（按 address 匹配，HA-04/ADJ-6）
     - name: "Fan Controller DS18B20-0"
       unique_id: "fan_ctrl_ds18b20_0"
-      state_topic: "fan-controller/+/sensor/ds18b20"
-      value_template: "{{ value_json.sensors[0].temperature_c }}"
+      state_topic: "fan-controller/__DEVICE_ID__/sensor/ds18b20"
+      value_template: >
+        {{ (value_json.sensors | selectattr('address', 'eq', '__DS_ADDR_0__')
+             | map(attribute='temperature_c') | first)
+           if (value_json.sensors | selectattr('address', 'eq', '__DS_ADDR_0__') | list | length > 0)
+           else 'unavailable' }}
       unit_of_measurement: "°C"
       device_class: temperature
       state_class: measurement
+      availability_topic: "fan-controller/__DEVICE_ID__/status"
+      availability_template: "{{ 'online' if value_json.status == 'online' else 'offline' }}"
       device:
-        identifiers: ["fan_ctrl_esp32"]
+        identifiers: ["fan_ctrl___DEVICE_ID__"]
+
+    # DS18B20 远程探头 1（第二探头，HA-04）
+    - name: "Fan Controller DS18B20-1"
+      unique_id: "fan_ctrl_ds18b20_1"
+      state_topic: "fan-controller/__DEVICE_ID__/sensor/ds18b20"
+      value_template: >
+        {{ (value_json.sensors | selectattr('address', 'eq', '__DS_ADDR_1__')
+             | map(attribute='temperature_c') | first)
+           if (value_json.sensors | selectattr('address', 'eq', '__DS_ADDR_1__') | list | length > 0)
+           else 'unavailable' }}
+      unit_of_measurement: "°C"
+      device_class: temperature
+      state_class: measurement
+      availability_topic: "fan-controller/__DEVICE_ID__/status"
+      availability_template: "{{ 'online' if value_json.status == 'online' else 'offline' }}"
+      device:
+        identifiers: ["fan_ctrl___DEVICE_ID__"]
 
     # 12V 电源电压
     - name: "Fan Controller 12V Rail"
       unique_id: "fan_ctrl_voltage_12v"
-      state_topic: "fan-controller/+/sensor/voltage"
+      state_topic: "fan-controller/__DEVICE_ID__/sensor/voltage"
       value_template: "{{ value_json.voltage_12v | round(2) }}"
       unit_of_measurement: "V"
       device_class: voltage
       state_class: measurement
+      availability_topic: "fan-controller/__DEVICE_ID__/status"
+      availability_template: "{{ 'online' if value_json.status == 'online' else 'offline' }}"
       device:
-        identifiers: ["fan_ctrl_esp32"]
+        identifiers: ["fan_ctrl___DEVICE_ID__"]
 
     # 5V 电源电压
     - name: "Fan Controller 5V Rail"
       unique_id: "fan_ctrl_voltage_5v"
-      state_topic: "fan-controller/+/sensor/voltage"
+      state_topic: "fan-controller/__DEVICE_ID__/sensor/voltage"
       value_template: "{{ value_json.voltage_5v | round(2) }}"
       unit_of_measurement: "V"
       device_class: voltage
       state_class: measurement
+      availability_topic: "fan-controller/__DEVICE_ID__/status"
+      availability_template: "{{ 'online' if value_json.status == 'online' else 'offline' }}"
       device:
-        identifiers: ["fan_ctrl_esp32"]
+        identifiers: ["fan_ctrl___DEVICE_ID__"]
+
+    # 3.3V 电源电压（HA-04 补齐）
+    - name: "Fan Controller 3.3V Rail"
+      unique_id: "fan_ctrl_voltage_3v3"
+      state_topic: "fan-controller/__DEVICE_ID__/sensor/voltage"
+      value_template: "{{ value_json.voltage_3v3 | round(2) }}"
+      unit_of_measurement: "V"
+      device_class: voltage
+      state_class: measurement
+      availability_topic: "fan-controller/__DEVICE_ID__/status"
+      availability_template: "{{ 'online' if value_json.status == 'online' else 'offline' }}"
+      device:
+        identifiers: ["fan_ctrl___DEVICE_ID__"]
 
     # ESP32 内部温度
     - name: "Fan Controller MCU Temperature"
       unique_id: "fan_ctrl_internal_temp"
-      state_topic: "fan-controller/+/sensor/internal_temp"
+      state_topic: "fan-controller/__DEVICE_ID__/sensor/internal_temp"
       value_template: "{{ value_json.temperature_c }}"
       unit_of_measurement: "°C"
       device_class: temperature
       state_class: measurement
+      availability_topic: "fan-controller/__DEVICE_ID__/status"
+      availability_template: "{{ 'online' if value_json.status == 'online' else 'offline' }}"
       device:
-        identifiers: ["fan_ctrl_esp32"]
+        identifiers: ["fan_ctrl___DEVICE_ID__"]
 
-    # 风扇 0-3 转速
+    # 风扇 0-7 转速（HA-02: 8 路）
     - name: "Fan 0 RPM"
       unique_id: "fan_ctrl_fan0_rpm"
-      state_topic: "fan-controller/+/fan/0/state"
+      state_topic: "fan-controller/__DEVICE_ID__/fan/0/state"
       value_template: "{{ value_json.rpm }}"
       unit_of_measurement: "RPM"
       state_class: measurement
+      availability_topic: "fan-controller/__DEVICE_ID__/status"
+      availability_template: "{{ 'online' if value_json.status == 'online' else 'offline' }}"
       device:
-        identifiers: ["fan_ctrl_esp32"]
+        identifiers: ["fan_ctrl___DEVICE_ID__"]
 
     - name: "Fan 1 RPM"
       unique_id: "fan_ctrl_fan1_rpm"
-      state_topic: "fan-controller/+/fan/1/state"
+      state_topic: "fan-controller/__DEVICE_ID__/fan/1/state"
       value_template: "{{ value_json.rpm }}"
       unit_of_measurement: "RPM"
       state_class: measurement
+      availability_topic: "fan-controller/__DEVICE_ID__/status"
+      availability_template: "{{ 'online' if value_json.status == 'online' else 'offline' }}"
       device:
-        identifiers: ["fan_ctrl_esp32"]
+        identifiers: ["fan_ctrl___DEVICE_ID__"]
 
     - name: "Fan 2 RPM"
       unique_id: "fan_ctrl_fan2_rpm"
-      state_topic: "fan-controller/+/fan/2/state"
+      state_topic: "fan-controller/__DEVICE_ID__/fan/2/state"
       value_template: "{{ value_json.rpm }}"
       unit_of_measurement: "RPM"
       state_class: measurement
+      availability_topic: "fan-controller/__DEVICE_ID__/status"
+      availability_template: "{{ 'online' if value_json.status == 'online' else 'offline' }}"
       device:
-        identifiers: ["fan_ctrl_esp32"]
+        identifiers: ["fan_ctrl___DEVICE_ID__"]
 
     - name: "Fan 3 RPM"
       unique_id: "fan_ctrl_fan3_rpm"
-      state_topic: "fan-controller/+/fan/3/state"
+      state_topic: "fan-controller/__DEVICE_ID__/fan/3/state"
       value_template: "{{ value_json.rpm }}"
       unit_of_measurement: "RPM"
       state_class: measurement
+      availability_topic: "fan-controller/__DEVICE_ID__/status"
+      availability_template: "{{ 'online' if value_json.status == 'online' else 'offline' }}"
       device:
-        identifiers: ["fan_ctrl_esp32"]
+        identifiers: ["fan_ctrl___DEVICE_ID__"]
+
+    - name: "Fan 4 RPM"
+      unique_id: "fan_ctrl_fan4_rpm"
+      state_topic: "fan-controller/__DEVICE_ID__/fan/4/state"
+      value_template: "{{ value_json.rpm }}"
+      unit_of_measurement: "RPM"
+      state_class: measurement
+      availability_topic: "fan-controller/__DEVICE_ID__/status"
+      availability_template: "{{ 'online' if value_json.status == 'online' else 'offline' }}"
+      device:
+        identifiers: ["fan_ctrl___DEVICE_ID__"]
+
+    - name: "Fan 5 RPM"
+      unique_id: "fan_ctrl_fan5_rpm"
+      state_topic: "fan-controller/__DEVICE_ID__/fan/5/state"
+      value_template: "{{ value_json.rpm }}"
+      unit_of_measurement: "RPM"
+      state_class: measurement
+      availability_topic: "fan-controller/__DEVICE_ID__/status"
+      availability_template: "{{ 'online' if value_json.status == 'online' else 'offline' }}"
+      device:
+        identifiers: ["fan_ctrl___DEVICE_ID__"]
+
+    - name: "Fan 6 RPM"
+      unique_id: "fan_ctrl_fan6_rpm"
+      state_topic: "fan-controller/__DEVICE_ID__/fan/6/state"
+      value_template: "{{ value_json.rpm }}"
+      unit_of_measurement: "RPM"
+      state_class: measurement
+      availability_topic: "fan-controller/__DEVICE_ID__/status"
+      availability_template: "{{ 'online' if value_json.status == 'online' else 'offline' }}"
+      device:
+        identifiers: ["fan_ctrl___DEVICE_ID__"]
+
+    - name: "Fan 7 RPM"
+      unique_id: "fan_ctrl_fan7_rpm"
+      state_topic: "fan-controller/__DEVICE_ID__/fan/7/state"
+      value_template: "{{ value_json.rpm }}"
+      unit_of_measurement: "RPM"
+      state_class: measurement
+      availability_topic: "fan-controller/__DEVICE_ID__/status"
+      availability_template: "{{ 'online' if value_json.status == 'online' else 'offline' }}"
+      device:
+        identifiers: ["fan_ctrl___DEVICE_ID__"]
