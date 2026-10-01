@@ -55,6 +55,15 @@ Thumbs.db
 # Test evidence (optional, keep for CI)
 # .sisyphus/evidence/
 
+# AI 过程产物（DOC-05: 字节级过程产物，移出 git 跟踪）
+.omo/
+.sisyphus/
+.claude/
+
+# 硬件备份文件（H-15: 根目录及其它目录通用，hardware/ 子目录规则见上）
+*.bak
+*.v7backup
+
 # Logs
 *.log
 logs/

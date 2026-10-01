@@ -1,6 +1,0 @@
-=== Task 12: BME280 QA ===
-int64_t for compensation:
-13
-Three data types (temp/hum/pressure):
-3
-RESULT: PASS

@@ -1,6 +1,0 @@
-=== Task 10: Fan PWM QA ===
-25kHz frequency:
-2
-LEDC_LOW_SPEED_MODE:
-5
-RESULT: PASS

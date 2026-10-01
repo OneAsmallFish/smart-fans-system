@@ -1,8 +1,0 @@
-=== Task 22: Main Loop QA ===
-xTaskCreate calls:
-4
-Key task names:
-6
-Stack sizes (4096/3072/5120/8192):
-4
-RESULT: PASS

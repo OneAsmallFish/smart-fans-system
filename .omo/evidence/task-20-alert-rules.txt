@@ -1,8 +1,0 @@
-=== Task 20: Alert Manager QA ===
-4 alert rules:
-13
-Dedup interval:
-3
-Alert cleared notification:
-9
-RESULT: PASS

@@ -1,4 +1,0 @@
-=== Task 19 PID ===
-10
-6
-RESULT: PASS

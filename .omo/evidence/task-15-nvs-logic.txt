@@ -1,5 +1,0 @@
-=== Task 15: NVS Logic ===
-6
-factory_reset/clear_credentials:
-3
-RESULT: PASS

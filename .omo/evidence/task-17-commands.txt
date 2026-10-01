@@ -1,6 +1,0 @@
-=== Task 17: USB Console QA ===
-Register_command calls:
-3
-Commands (status/ota/reboot/help):
-3
-RESULT: PASS
