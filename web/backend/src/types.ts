@@ -55,12 +55,25 @@ export interface OTAStatus {
   message?: string
 }
 
+/** 曲线回读缓存：设备侧无 curve 回读协议，缓存最近一次下发的 curve 命令供 UI 回显 */
+export interface CurveCache {
+  mode: 'lut' | 'pid'
+  temperature_source?: string
+  points?: Array<{ temp_c: number; duty_pct: number }>
+  kp?: number
+  ki?: number
+  kd?: number
+  setpoint_c?: number
+  timestamp: number
+}
+
 export interface DeviceState {
   deviceId: string
   online: boolean
   lastSeen: number
   firmware?: string
   ipAddress?: string
+  uptime_s?: number   // status 消息的 uptime_seconds（协议 §4.1）
   sensors: {
     bme280?: SensorBME280
     ds18b20?: SensorDS18B20[]
@@ -70,4 +83,10 @@ export interface DeviceState {
   fans: FanState[]
   alerts: AlertEvent[]
   ota?: OTAStatus
+  /** config/# 回读（alert 规则等） */
+  config?: {
+    alert?: Record<string, unknown>
+  }
+  /** 每路风扇最近下发的曲线缓存（key = fan_index 字符串） */
+  curves?: Record<string, CurveCache>
 }

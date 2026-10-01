@@ -1,124 +1,208 @@
-// pages/History.tsx — 历史趋势图 + 时间范围选择 + CSV 导出
-// WEB-07: 8 路风扇序列全覆盖；timestamp < 1000000000 显示"时间未同步"。
-// 注：当前数据源为页面运行期累积的实时读数；后端 /history 端点为未接通占位
-// （WEB-10，接通 ESP32 Flash 日志/agent 通道后自动可用）。
-import { useState, useEffect, useCallback } from 'react'
+// pages/History.tsx v2 — 真实历史数据（后端环形缓冲 /history）+ 风扇筛选 + CSV 导出
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
+import { Download } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, Legend,
          ResponsiveContainer, CartesianGrid } from 'recharts'
-import { useWebSocket } from '../hooks/useWebSocket'
-
-const WS_URL = `ws://${window.location.hostname}:3001`
-const FAN_COUNT = 8   /* WEB-03/ADJ-13: 与后端常量一致 */
+import { useWs } from '../providers/ws'
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
+import { Button } from '../components/ui/button'
+import { Segmented } from '../components/ui/segmented'
+import { api } from '../lib/api'
+import { deviceTime } from '../lib/format'
+import { FAN_COUNT, type HistoryPoint } from '../types'
 
 const FAN_COLORS = ['#8b5cf6', '#06b6d4', '#22c55e', '#f59e0b',
                     '#ef4444', '#ec4899', '#3b82f6', '#14b8a6']
 
-const TIME_RANGES = ['1h', '6h', '24h', '7d']
+type RangeKey = '1h' | '6h' | '24h'
+const RANGE_SECONDS: Record<RangeKey, number> = { '1h': 3600, '6h': 21600, '24h': 86400 }
 
-function fmtEntryTime(ts?: number): string {
-  if (ts !== undefined && ts < 1000000000) return '时间未同步'
-  const now = new Date()
-  return `${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`
-}
+const AXIS = { fontSize: 10, fill: 'var(--chart-axis)' }
 
 export default function History() {
-  const { devices } = useWebSocket(WS_URL)
-  const device = devices[0]
+  const { t } = useTranslation()
+  const { devices } = useWs()
+  const [selected, setSelected] = useState<string | null>(null)
+  const [range, setRange] = useState<RangeKey>('1h')
+  const [points, setPoints] = useState<HistoryPoint[]>([])
+  const [fanFilter, setFanFilter] = useState<number | 'all'>('all')
 
-  const [range, setRange] = useState('1h')
-  const [history, setHistory] = useState<Array<{
-    time: string; ts?: number
-    bme_temp?: number; ds_temp?: number
-    fan_rpm?: Array<number | undefined>
-  }>>([])
+  const dev = devices.find(d => d.deviceId === selected) ?? devices[0]
 
-  // Accumulate live readings into local history buffer
+  const load = useCallback(async () => {
+    if (!dev) return
+    const to = Math.floor(Date.now() / 1000)
+    try {
+      const res = await api.history(dev.deviceId, to - RANGE_SECONDS[range], to)
+      setPoints(res.points)
+    } catch { /* 后端暂不可达时保留旧数据 */ }
+  }, [dev, range])
+
   useEffect(() => {
-    if (!device?.sensors?.bme280) return
-    const bme = device.sensors.bme280
-    const entry = {
-      time: fmtEntryTime(bme.timestamp),
-      ts: bme.timestamp,
-      bme_temp: bme.temperature_c,
-      ds_temp: device.sensors.ds18b20?.find(s => s.valid)?.temperature_c,
-      fan_rpm: Array.from({ length: FAN_COUNT },
-                          (_, i) => device.fans[i]?.rpm),
-    }
-    setHistory(h => {
-      const maxPts = range === '1h' ? 360 : range === '6h' ? 360 : 288
-      const next = [...h, entry]
-      return next.length > maxPts ? next.slice(-maxPts) : next
-    })
-  }, [device?.sensors?.bme280?.temperature_c, range])
+    void load()
+    const timer = setInterval(() => void load(), 10000)
+    return () => clearInterval(timer)
+  }, [load])
 
-  const exportCSV = useCallback(() => {
-    const header = 'time,' + ['bme_temp', 'ds_temp', ...Array.from({length: FAN_COUNT}, (_, i) => `fan${i}_rpm`)].join(',')
-    const rows = history.map(r =>
-      `${r.time},${r.bme_temp ?? ''},${r.ds_temp ?? ''},${(r.fan_rpm ?? []).map(v => v ?? '').join(',')}`)
+  // Recharts 数据：展平 fans 数组为 fan{i} 列
+  const chartData = useMemo(() => points.map(p => {
+    const ts = deviceTime(p.ts)
+    const row: Record<string, number | string | null | undefined> = {
+      time: ts ? ts.toLocaleTimeString(undefined, { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '',
+    }
+    if (p.bme !== undefined) row.bme = p.bme
+    p.ds?.forEach((v: number | null, i: number) => { if (v != null) row[`ds${i}`] = v })
+    if (p.internal !== undefined) row.internal = p.internal
+    p.rpm.forEach((v, i) => { row[`fan${i}`] = v })
+    return row
+  }), [points])
+
+  const visibleFans = fanFilter === 'all'
+    ? Array.from({ length: FAN_COUNT }, (_, i) => i)
+    : [fanFilter]
+
+  const dsProbeCount = useMemo(() => {
+    let n = 0
+    for (const p of points) n = Math.max(n, p.ds?.length ?? 0)
+    return n
+  }, [points])
+
+  const exportCSV = () => {
+    const dsHeader = Array.from({ length: dsProbeCount }, (_, i) => `ds${i}`).join(',')
+    const fanHeader = Array.from({ length: FAN_COUNT }, (_, i) => `fan${i}_rpm`).join(',')
+    const header = `time,bme,${dsHeader},${fanHeader}`
+    const rows = points.map(p => {
+      const ts = deviceTime(p.ts)
+      const ds = Array.from({ length: dsProbeCount }, (_, i) => p.ds?.[i] ?? '').join(',')
+      const fans = Array.from({ length: FAN_COUNT }, (_, i) => p.rpm[i] ?? '').join(',')
+      return `${ts?.toISOString() ?? ''},${p.bme ?? ''},${ds},${fans}`
+    })
     const blob = new Blob([[header, ...rows].join('\n')], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
-    const a = document.createElement('a'); a.href = url; a.download = 'fan-history.csv'; a.click()
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `fan-history-${dev?.deviceId ?? 'device'}.csv`
+    a.click()
     URL.revokeObjectURL(url)
-  }, [history])
+    toast.success(t('history.csvExported'))
+  }
+
+  const empty = points.length === 0
 
   return (
-    <main style={{ padding: '1.5rem', maxWidth: 900, margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <h1 style={{ margin: 0 }}>History</h1>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {TIME_RANGES.map(r => (
-            <button key={r} onClick={() => setRange(r)} style={{
-              padding: '3px 12px', borderRadius: 99, fontSize: 12, cursor: 'pointer',
-              background: range === r ? '#3b82f6' : '#374151', color: 'white', border: 'none',
-            }}>{r}</button>
-          ))}
-          <button onClick={exportCSV} style={{
-            padding: '3px 12px', borderRadius: 99, fontSize: 12, cursor: 'pointer',
-            background: '#374151', color: '#22c55e', border: '1px solid #22c55e',
-          }}>↓ CSV</button>
+    <div>
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-xl font-bold tracking-tight">{t('history.title')}</h1>
+        <div className="flex items-center gap-2">
+          <Segmented
+            value={range}
+            onChange={r => setRange(r as RangeKey)}
+            options={(['1h', '6h', '24h'] as RangeKey[]).map(r => ({ value: r, label: t(`history.range.${r}`) }))}
+          />
+          <Button size="sm" variant="outline" onClick={exportCSV} disabled={empty}>
+            <Download size={13} /> CSV
+          </Button>
         </div>
       </div>
 
-      <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 16px' }}>
-        数据为页面运行期累积的实时读数；设备 Flash 历史导入为规划功能（后端 /history 端点未接通）。
-      </p>
+      <p className="mb-4 text-[11px] text-faint">{t('history.bufferNote')}</p>
 
-      {/* Temperature chart */}
-      <div style={{ background: '#1e2030', borderRadius: 12, padding: 16, marginBottom: 16 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Temperature (°C)</div>
-        <ResponsiveContainer width="100%" height={200}>
-          <LineChart data={history} margin={{ top: 4, right: 8, bottom: 4, left: -20 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#2d3748" />
-            <XAxis dataKey="time" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-            <YAxis tick={{ fontSize: 10 }} unit="°C" />
-            <Tooltip />
-            <Legend wrapperStyle={{ fontSize: 12 }} />
-            <Line dataKey="bme_temp"  name="BME280"  stroke="#3b82f6" dot={false} strokeWidth={2} />
-            <Line dataKey="ds_temp"   name="DS18B20" stroke="#f59e0b" dot={false} strokeWidth={2} />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
+      {dev && devices.length > 1 && (
+        <div className="mb-4">
+          <Segmented
+            value={dev.deviceId}
+            onChange={setSelected}
+            options={devices.map(d => ({ value: d.deviceId, label: d.deviceId }))}
+          />
+        </div>
+      )}
 
-      {/* Fan RPM chart — 8 路全覆盖（WEB-07） */}
-      <div style={{ background: '#1e2030', borderRadius: 12, padding: 16 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Fan Speed (RPM, 8 fans)</div>
-        <ResponsiveContainer width="100%" height={200}>
-          <LineChart data={history} margin={{ top: 4, right: 8, bottom: 4, left: -20 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#2d3748" />
-            <XAxis dataKey="time" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-            <YAxis tick={{ fontSize: 10 }} />
-            <Tooltip />
-            <Legend wrapperStyle={{ fontSize: 11 }} />
+      {/* 温度图 */}
+      <Card className="relative mb-4 overflow-hidden">
+        <span className="scan-line" />
+        <CardHeader>
+          <CardTitle>{t('history.tempChart')}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {empty ? (
+            <div className="grid h-40 place-items-center text-sm text-faint">{t('history.empty')}</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: -18 }} syncId="hist">
+                <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 3" />
+                <XAxis dataKey="time" tick={AXIS} interval="preserveStartEnd" minTickGap={48} />
+                <YAxis tick={AXIS} unit="°C" width={46} />
+                <Tooltip contentStyle={tooltipStyle} labelStyle={{ color: 'var(--muted)' }} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Line dataKey="bme" name="BME280" stroke="#3b82f6" dot={false} strokeWidth={2} />
+                {Array.from({ length: dsProbeCount }, (_, i) => (
+                  <Line key={i} dataKey={`ds${i}`} name={t('history.dsProbe', { n: i })} stroke="#f59e0b" dot={false} strokeWidth={2} />
+                ))}
+                <Line dataKey="internal" name={t('dash.mcu')} stroke="#ec4899" dot={false} strokeWidth={1.6} />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* 风扇 RPM 图 + 筛选 */}
+      <Card className="relative overflow-hidden">
+        <span className="scan-line" />
+        <CardHeader className="flex-wrap">
+          <CardTitle>{t('history.rpmChart')}</CardTitle>
+          <div className="flex flex-wrap gap-1">
+            <button
+              onClick={() => setFanFilter('all')}
+              className={`cursor-pointer rounded-full border px-2.5 py-0.5 text-[11px] transition-colors ${
+                fanFilter === 'all' ? 'border-primary/50 bg-primary-soft text-primary' : 'border-line text-muted hover:text-fg'
+              }`}
+            >
+              {t('history.fanAll')}
+            </button>
             {Array.from({ length: FAN_COUNT }, (_, i) => (
-              <Line key={i}
-                    dataKey={(d: any) => d.fan_rpm?.[i]}
-                    name={`Fan ${i}`}
-                    stroke={FAN_COLORS[i % FAN_COLORS.length]}
-                    dot={false} strokeWidth={1.6} />
+              <button
+                key={i}
+                onClick={() => setFanFilter(i)}
+                className={`num cursor-pointer rounded-full border px-2.5 py-0.5 text-[11px] transition-colors ${
+                  fanFilter === i ? 'border-primary/50 bg-primary-soft text-primary' : 'border-line text-muted hover:text-fg'
+                }`}
+              >
+                F{i}
+              </button>
             ))}
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-    </main>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {empty ? (
+            <div className="grid h-40 place-items-center text-sm text-faint">{t('history.empty')}</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: -18 }} syncId="hist">
+                <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 3" />
+                <XAxis dataKey="time" tick={AXIS} interval="preserveStartEnd" minTickGap={48} />
+                <YAxis tick={AXIS} width={46} />
+                <Tooltip contentStyle={tooltipStyle} labelStyle={{ color: 'var(--muted)' }} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                {visibleFans.map(i => (
+                  <Line key={i} dataKey={`fan${i}`} name={t('history.fanN', { n: i })}
+                        stroke={FAN_COLORS[i % FAN_COLORS.length]}
+                        dot={false} strokeWidth={fanFilter === 'all' ? 1.5 : 2.4} />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   )
+}
+
+const tooltipStyle = {
+  background: 'var(--surface)',
+  border: '1px solid var(--line)',
+  borderRadius: 12,
+  fontSize: 12,
+  backdropFilter: 'blur(10px)',
 }

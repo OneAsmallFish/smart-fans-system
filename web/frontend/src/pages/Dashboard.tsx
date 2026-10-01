@@ -1,26 +1,28 @@
-// pages/Dashboard.tsx — 实时仪表盘（WEB-11: 使用 components/DeviceCard，删除内联版）
-import { useWebSocket } from '../hooks/useWebSocket'
-import { DeviceCard } from '../components/DeviceCard'
-
-const WS_URL = `ws://${window.location.hostname}:3001`
+// pages/Dashboard.tsx — 总览：设备概览卡（Hero + 环形仪表 + 电压 + 风扇阵列）
+import { useTranslation } from 'react-i18next'
+import { useWs } from '../providers/ws'
+import { DeviceOverview } from '../components/dash/DeviceOverview'
 
 export default function Dashboard() {
-  const { devices, connected } = useWebSocket(WS_URL)
+  const { t } = useTranslation()
+  const { devices, connected } = useWs()
 
   return (
-    <main style={{ padding: '1.5rem', maxWidth: 900, margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-        <h1 style={{ margin: 0 }}>Dashboard</h1>
-        <span style={{ fontSize: 12, color: connected ? '#22c55e' : '#ef4444' }}>
-          {connected ? '● WebSocket' : '○ Disconnected'}
+    <div>
+      <div className="mb-5 flex items-center justify-between">
+        <h1 className="text-xl font-bold tracking-tight">{t('dash.title')}</h1>
+        <span className={`text-xs ${connected ? 'text-ok' : 'text-danger'}`}>
+          {connected ? t('common.connected') : t('common.disconnected')}
         </span>
       </div>
 
       {devices.length === 0 ? (
-        <p style={{ color: '#aaa' }}>Waiting for devices to come online...</p>
+        <div className="glass hud grid place-items-center rounded-2xl py-24 text-sm text-muted">
+          {t('dash.waiting')}
+        </div>
       ) : (
-        devices.map(d => <DeviceCard key={d.deviceId} device={d} />)
+        devices.map(d => <DeviceOverview key={d.deviceId} device={d} />)
       )}
-    </main>
+    </div>
   )
 }

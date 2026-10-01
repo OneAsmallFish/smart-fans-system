@@ -3,7 +3,7 @@ import express from 'express'
 import cors from 'cors'
 import { WebSocketServer } from 'ws'
 import http from 'http'
-import { setupMQTT } from './mqtt.js'
+import { setupMQTT, mqttConnected } from './mqtt.js'
 import devicesRouter from './routes/devices.js'
 
 const app = express()
@@ -14,7 +14,7 @@ app.use(cors())
 app.use(express.json())
 
 // Health check — smoke test uses this endpoint
-app.get('/health', (_req, res) => res.json({ ok: true, uptime: process.uptime() }))
+app.get('/health', (_req, res) => res.json({ ok: true, uptime: process.uptime(), mqtt: mqttConnected() }))
 
 // REST API routes
 app.use('/api/devices', devicesRouter)

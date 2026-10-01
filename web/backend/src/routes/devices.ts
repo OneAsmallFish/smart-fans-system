@@ -3,7 +3,8 @@
 // CurveSchema pid 字段平铺（ADJ-4）+ temperature_source 枚举（ADJ-5）。
 import { Router } from 'express'
 import { z } from 'zod'
-import { getDevices, publishCommand, publishConfig } from '../mqtt.js'
+import { getDevices, setDeviceCurve, publishCommand, publishConfig } from '../mqtt.js'
+import { getHistory } from '../history.js'
 
 const router = Router()
 
@@ -30,18 +31,15 @@ router.get('/:id', (req, res) => {
   res.json(ok(device))
 })
 
-// GET /api/devices/:id/history — WEB-10: 占位实现，明确标注"未接通"
-// （接通 agent/固件 Flash 日志通道为规划项；前端 History 页有对应提示）
+// GET /api/devices/:id/history?from&to — 环形缓冲真实数据（内存态，重启清零）
+// 降采样至 ≤600 点，保证前端渲染与传输体积可控
 router.get('/:id/history', (req, res) => {
-  const { from, to } = req.query
-  res.json(ok({
-    deviceId: req.params.id,
-    from,
-    to,
-    entries: [],
-    stub: true,
-    note: 'not wired: history source (ESP32 flash logs / agent channel) is not connected yet',
-  }))
+  const to = Math.min(Number(req.query.to) || Math.floor(Date.now() / 1000), Math.floor(Date.now() / 1000))
+  const from = Math.max(Number(req.query.from) || to - 3600, to - 24 * 3600)
+  const all = getHistory(req.params.id, from, to)
+  const step = Math.max(1, Math.ceil(all.length / 600))
+  const points = all.filter((_, i) => i % step === 0 || i === all.length - 1)
+  res.json(ok({ deviceId: req.params.id, from, to, points }))
 })
 
 // POST /api/devices/:id/fan/:fanIdx  { speed: 0-100 }
@@ -77,16 +75,34 @@ router.post('/:id/fan/:fanIdx/curve', (req, res) => {
   const parsed = CurveSchema.safeParse(req.body)
   if (!parsed.success) return send(res, fail(parsed.error.message))
   const { points, ...rest } = parsed.data
+  const clampedPoints = points?.map(p => ({
+    temp_c: p.temp_c,
+    duty_pct: Math.max(0, Math.min(100, p.duty_pct)),
+  }))
   publishCommand(req.params.id, 'curve', {
     fan_index: parseInt(req.params.fanIdx),
     timestamp: Math.floor(Date.now() / 1000),
     ...rest,
-    ...(points ? { points: points.map(p => ({
-      temp_c: p.temp_c,
-      duty_pct: Math.max(0, Math.min(100, p.duty_pct)),
-    })) } : {}),
+    ...(clampedPoints ? { points: clampedPoints } : {}),
+  })
+  // 回读缓存（设备侧无 curve 回读协议，WEB 重构：UI 依此回显）
+  setDeviceCurve(req.params.id, parseInt(req.params.fanIdx), {
+    mode: rest.mode,
+    temperature_source: rest.temperature_source,
+    ...(clampedPoints ? { points: clampedPoints } : {}),
+    ...(rest.kp !== undefined ? { kp: rest.kp } : {}),
+    ...(rest.ki !== undefined ? { ki: rest.ki } : {}),
+    ...(rest.kd !== undefined ? { kd: rest.kd } : {}),
+    ...(rest.setpoint_c !== undefined ? { setpoint_c: rest.setpoint_c } : {}),
+    timestamp: Math.floor(Date.now() / 1000),
   })
   res.json(ok({ applied: true }))
+})
+
+// GET /api/devices/:id/curve/:fanIdx — 最近一次下发的曲线（回读缓存；设备侧无回读协议）
+router.get('/:id/curve/:fanIdx', (req, res) => {
+  const cached = getDevices().get(req.params.id)?.curves?.[req.params.fanIdx] ?? null
+  res.json(ok(cached))
 })
 
 // POST /api/devices/:id/alert  { rules: [...] }

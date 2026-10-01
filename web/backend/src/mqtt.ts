@@ -4,6 +4,7 @@
 import mqtt from 'mqtt'
 import { WebSocketServer, WebSocket } from 'ws'
 import { FAN_COUNT, type DeviceState, type FanState } from './types.js'
+import { recordSample } from './history.js'
 
 const TOPIC_PREFIX = 'fan-controller'
 const WS_PUSH_INTERVAL_MS = 2000
@@ -28,6 +29,17 @@ function getOrCreate(deviceId: string): DeviceState {
 
 export function getDevices() { return devices }
 
+/** /health 用：当前 MQTT 链路状态 */
+export function mqttConnected(): boolean {
+  return !!mqttClient?.connected
+}
+
+/** 曲线下发后由 REST 路由调用：写入回读缓存（设备侧无回读协议） */
+export function setDeviceCurve(deviceId: string, fanIdx: number, cfg: import('./types.js').CurveCache) {
+  const d = getOrCreate(deviceId)
+  d.curves = { ...d.curves, [String(fanIdx)]: cfg }
+}
+
 let mqttClient: ReturnType<typeof mqtt.connect> | null = null
 
 export function setupMQTT(brokerUrl: string, wss: WebSocketServer) {
@@ -43,6 +55,7 @@ export function setupMQTT(brokerUrl: string, wss: WebSocketServer) {
     mqttClient!.subscribe(`${TOPIC_PREFIX}/+/fan/+/state`)
     mqttClient!.subscribe(`${TOPIC_PREFIX}/+/alert`)
     mqttClient!.subscribe(`${TOPIC_PREFIX}/+/ota/status`)     // WEB-04: OTA 进度
+    mqttClient!.subscribe(`${TOPIC_PREFIX}/+/config/#`)       // alert/curve 回读（协议 §6）
   })
 
   mqttClient.on('message', (topic: string, payload: Buffer) => {
@@ -59,6 +72,7 @@ export function setupMQTT(brokerUrl: string, wss: WebSocketServer) {
         device.online    = data.status === 'online'
         device.firmware  = data.firmware_version
         device.ipAddress = data.ip_address
+        if (typeof data.uptime_seconds === 'number') device.uptime_s = data.uptime_seconds
 
       } else if (parts[2] === 'sensor') {
         // parts[3]=type；parts[4]==='buffered' 时为离线补发（同 schema）
@@ -84,12 +98,24 @@ export function setupMQTT(brokerUrl: string, wss: WebSocketServer) {
 
       } else if (parts[2] === 'ota' && parts[3] === 'status') {
         device.ota = { ...data }   // WEB-04: 前端经 WebSocket 读到进度
+
+      } else if (parts[2] === 'config') {
+        // 协议 §6: 设备对 config/{section} {get:true} 的应答原样缓存，随 WS 推给前端
+        const section = parts[3]
+        if (section === 'alert') {
+          device.config = { ...device.config, alert: data }
+        } else if (section === 'curve' && parts[4] !== undefined) {
+          device.curves = { ...device.curves, [parts[4]]: { ...data, timestamp: data.timestamp ?? Math.floor(Date.now() / 1000) } }
+        }
       }
     } catch { /* malformed JSON — ignore */ }
   })
 
-  // Broadcast device state to all WebSocket clients every 2s
+  // Broadcast device state to all WebSocket clients every 2s (同步采集历史样本)
   setInterval(() => {
+    for (const d of devices.values()) {
+      if (d.online) recordSample(d.deviceId, d)
+    }
     const payload = JSON.stringify({
       type: 'devices',
       data: [...devices.values()],
