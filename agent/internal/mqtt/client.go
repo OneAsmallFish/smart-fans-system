@@ -1,5 +1,7 @@
 // internal/mqtt/client.go — MQTT 发布/订阅客户端
-// 基于 paho.mqtt.golang，指数退避重连，串口指令中继
+// 基于 paho.mqtt.golang，指数退避重连。
+// AG-04: 订阅范围按协议 §11 —— fan-controller/+/sensor/# 与 +/alert
+// （告警转发系统日志）；不再订阅 command/#（命令不经过 agent）。
 package mqtt
 
 import (
@@ -16,16 +18,18 @@ import (
 
 // Client wraps the paho MQTT connection.
 type Client struct {
-	cfg        *config.Config
-	paho       pahomqtt.Client
-	mu         sync.Mutex
-	connected  bool
-	onCommand  func(topic, payload string)
+	cfg         *config.Config
+	hostname    string
+	paho        pahomqtt.Client
+	mu          sync.Mutex
+	connected   bool
+	onAlertLog  func(alertJSON string) // 告警转发（默认写系统日志）
 }
 
 // NewClient creates and connects a new MQTT client.
-func NewClient(cfg *config.Config) (*Client, error) {
-	c := &Client{cfg: cfg}
+// hostname 用于发布 topic：system-monitor/{hostname}/sensor/{collector}（协议 §11）。
+func NewClient(cfg *config.Config, hostname string) (*Client, error) {
+	c := &Client{cfg: cfg, hostname: hostname}
 
 	opts := pahomqtt.NewClientOptions()
 	opts.AddBroker(cfg.MQTT.Broker)
@@ -36,6 +40,8 @@ func NewClient(cfg *config.Config) (*Client, error) {
 	opts.SetCleanSession(true)
 	opts.SetAutoReconnect(true)
 	opts.SetMaxReconnectInterval(60 * time.Second)
+	opts.SetConnectRetry(true)
+	opts.SetConnectRetryInterval(5 * time.Second)
 
 	opts.SetOnConnectHandler(func(client pahomqtt.Client) {
 		c.mu.Lock()
@@ -43,13 +49,20 @@ func NewClient(cfg *config.Config) (*Client, error) {
 		c.mu.Unlock()
 		log.Printf("[mqtt] connected to %s", cfg.MQTT.Broker)
 
-		// Subscribe to fan-controller commands
-		topic := fmt.Sprintf("%s/+/command/#", cfg.MQTT.TopicPrefix)
-		client.Subscribe(topic, 1, func(_ pahomqtt.Client, msg pahomqtt.Message) {
-			if c.onCommand != nil {
-				c.onCommand(msg.Topic(), string(msg.Payload()))
-			}
-		})
+		// AG-04: 订阅按协议 §11（sensor 全量 + 告警），无 command 订阅
+		client.Subscribe(fmt.Sprintf("%s/+/sensor/#", cfg.MQTT.TopicPrefix), 0,
+			func(_ pahomqtt.Client, msg pahomqtt.Message) {
+				log.Printf("[sensor] %s", msg.Topic()) // 诊断用途（journal 可查）
+			})
+		client.Subscribe(fmt.Sprintf("%s/+/alert", cfg.MQTT.TopicPrefix), 1,
+			func(_ pahomqtt.Client, msg pahomqtt.Message) {
+				// 告警转发系统日志（协议 §11 对 agent 的定位）
+				if c.onAlertLog != nil {
+					c.onAlertLog(string(msg.Payload()))
+				} else {
+					log.Printf("[alert] %s %s", msg.Topic(), string(msg.Payload()))
+				}
+			})
 	})
 
 	opts.SetConnectionLostHandler(func(_ pahomqtt.Client, err error) {
@@ -61,19 +74,20 @@ func NewClient(cfg *config.Config) (*Client, error) {
 
 	c.paho = pahomqtt.NewClient(opts)
 	token := c.paho.Connect()
-	if token.WaitTimeout(30*time.Second) && token.Error() != nil {
+	// AG-07: WaitTimeout 返回 false 表示超时；true 且 Error!=nil 才是失败
+	if !token.WaitTimeout(30*time.Second) || token.Error() != nil {
 		return nil, fmt.Errorf("mqtt connect: %w", token.Error())
 	}
 	return c, nil
 }
 
 // PublishMetrics publishes a MetricBatch from a collector.
+// Topic: system-monitor/{hostname}/sensor/{collector}（AG-02/AG-04: 用 hostname，非 ClientID）
 func (c *Client) PublishMetrics(batch *monitor.MetricBatch) error {
 	if batch == nil {
 		return nil
 	}
-	topic := fmt.Sprintf("system-monitor/%s/sensor/%s",
-		c.cfg.MQTT.ClientID, batch.CollectorName)
+	topic := fmt.Sprintf("system-monitor/%s/sensor/%s", c.hostname, batch.CollectorName)
 	payload, err := json.Marshal(batch)
 	if err != nil {
 		return err
@@ -83,9 +97,14 @@ func (c *Client) PublishMetrics(batch *monitor.MetricBatch) error {
 	return token.Error()
 }
 
-// SetCommandHandler registers a callback for received MQTT commands.
-func (c *Client) SetCommandHandler(fn func(topic, payload string)) {
-	c.onCommand = fn
+// SetAlertHandler registers a callback for alert payloads (system-log relay).
+func (c *Client) SetAlertHandler(fn func(alertJSON string)) {
+	c.onAlertLog = fn
+}
+
+// Disconnect cleanly closes the MQTT connection.
+func (c *Client) Disconnect() {
+	c.paho.Disconnect(500)
 }
 
 // IsConnected reports whether the MQTT connection is active.

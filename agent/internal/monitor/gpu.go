@@ -3,7 +3,6 @@
 package monitor
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"log"

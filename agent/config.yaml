@@ -1,6 +1,5 @@
 mqtt:
-  broker: "mqtt://192.168.1.100"
-  port: 1883
+  broker: "mqtt://192.168.1.100:1883"
   client_id: "smart-fan-agent"
   topic_prefix: "fan-controller"
   username: ""
