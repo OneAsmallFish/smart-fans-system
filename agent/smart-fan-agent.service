@@ -6,7 +6,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=nobody
-Group=nobody
+# 不指定 Group：systemd 回退到 User 的主组（Debian/Ubuntu=nogroup，RHEL=nobody）。
+# 旧写法 Group=nobody 在 Debian/Ubuntu 上因组不存在导致 status=216/GROUP 起不来。
 # AG-05: 串口设备（/dev/ttyACM0）通常归 dialout 组
 SupplementaryGroups=dialout
 ExecStart=/usr/local/bin/smart-fan-agent
