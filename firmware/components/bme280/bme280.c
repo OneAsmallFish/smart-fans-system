@@ -1,10 +1,10 @@
 /*
  * bme280.c — BME280 I2C 驱动 + Bosch 补偿算法
  * 使用 int64_t 防溢出（补偿公式最大中间值约 2^40）
- * ⚠️ I2C 超时设为 1000ms；出错后重新调用 i2c_master_bus_rm_device + 重初始化，
- *    防止总线死锁永久阻塞
+ * 校准参数读取失败即 fail-fast 返回错误（不会静默使用垃圾参数）。
  */
 #include "bme280.h"
+#include "esp_check.h"
 #include "driver/i2c_master.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -126,9 +126,9 @@ esp_err_t bme280_init(void)
     bme_write(REG_RESET, 0xB6);
     vTaskDelay(pdMS_TO_TICKS(10));
 
-    /* Read temperature/pressure calibration (0x88..0x9F) */
+    /* Read temperature/pressure calibration (0x88..0x9F) — fail-fast (FW-30) */
     uint8_t cal[26];
-    bme_read(REG_CALIB_T1, cal, 24);
+    ESP_RETURN_ON_ERROR(bme_read(REG_CALIB_T1, cal, 24), TAG, "calib T/P read failed");
     s_cal.T1 = (uint16_t)(cal[1] << 8 | cal[0]);
     s_cal.T2 = (int16_t)(cal[3] << 8 | cal[2]);
     s_cal.T3 = (int16_t)(cal[5] << 8 | cal[4]);
@@ -137,9 +137,9 @@ esp_err_t bme280_init(void)
         ((int16_t *)&s_cal.P2)[i] = (int16_t)(cal[9+i*2] << 8 | cal[8+i*2]);
 
     /* Humidity calibration */
-    bme_read(REG_CALIB_H1, &s_cal.H1, 1);
+    ESP_RETURN_ON_ERROR(bme_read(REG_CALIB_H1, &s_cal.H1, 1), TAG, "calib H1 read failed");
     uint8_t hcal[7];
-    bme_read(REG_CALIB_H2, hcal, 7);
+    ESP_RETURN_ON_ERROR(bme_read(REG_CALIB_H2, hcal, 7), TAG, "calib H2-H6 read failed");
     s_cal.H2 = (int16_t)(hcal[1] << 8 | hcal[0]);
     s_cal.H3 = hcal[2];
     s_cal.H4 = (int16_t)(hcal[3] << 4 | (hcal[4] & 0x0F));

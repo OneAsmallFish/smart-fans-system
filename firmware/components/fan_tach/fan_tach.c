@@ -4,6 +4,7 @@
  * ⚠️ 不用GPIO中断计数，PCNT硬件保证不丢脉冲
  */
 #include "fan_tach.h"
+#include "esp_check.h"
 #include "driver/pulse_cnt.h"
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
@@ -13,12 +14,15 @@
 
 static const char *TAG = "FAN_TACH";
 
-static const int TACH_GPIO[FAN_TACH_COUNT] = { 8, 9, 10, 11 };
+/* v1.2 权威引脚表：Fan1-8 Tach → GPIO13/14/15/21/38/39/40/41
+ * S3 仅 4 个 PCNT 单元，每单元 2 通道：unit = i/2, channel = i%2 */
+static const int TACH_GPIO[FAN_TACH_COUNT] = { 13, 14, 15, 21, 38, 39, 40, 41 };
+#define PCNT_UNIT_N   (FAN_TACH_COUNT / 2)   /* 4 units × 2 channels */
 
 #define STALL_RPM_THRESHOLD  200  /* RPM低于此值视为停转 */
 #define STALL_CONFIRM_SECS   3    /* 连续3秒才触发停转回调 */
 
-static pcnt_unit_handle_t  s_units[FAN_TACH_COUNT];
+static pcnt_unit_handle_t  s_units[PCNT_UNIT_N];
 static uint16_t            s_rpm[FAN_TACH_COUNT];
 static uint8_t             s_stall_secs[FAN_TACH_COUNT];
 static bool                s_stall_fired[FAN_TACH_COUNT];
@@ -30,8 +34,8 @@ static void sample_cb(TimerHandle_t t)
     (void)t;
     for (int i = 0; i < FAN_TACH_COUNT; i++) {
         int count = 0;
-        pcnt_unit_get_count(s_units[i], &count);
-        pcnt_unit_clear_count(s_units[i]);
+        pcnt_unit_get_count(s_units[i / 2], &count);
+        pcnt_unit_clear_count(s_units[i / 2]);
 
         /* RPM = pulses * 60 / (2 * 1.0s window) */
         s_rpm[i] = (uint16_t)((count * 60) / 2);
@@ -51,34 +55,37 @@ static void sample_cb(TimerHandle_t t)
 
 esp_err_t fan_tach_init(void)
 {
-    for (int i = 0; i < FAN_TACH_COUNT; i++) {
+    /* 4 个 PCNT 单元 */
+    for (int u = 0; u < PCNT_UNIT_N; u++) {
         pcnt_unit_config_t unit_cfg = {
             .high_limit = 32767,
             .low_limit  = -1,
         };
-        ESP_RETURN_ON_ERROR(pcnt_new_unit(&unit_cfg, &s_units[i]),
-                            TAG, "pcnt unit %d failed", i);
+        ESP_RETURN_ON_ERROR(pcnt_new_unit(&unit_cfg, &s_units[u]),
+                            TAG, "pcnt unit %d failed", u);
+        pcnt_unit_enable(s_units[u]);
+        pcnt_unit_clear_count(s_units[u]);
+        pcnt_unit_start(s_units[u]);
+    }
 
+    /* 每单元 2 通道，共 8 路 Tach 输入（上升沿计数） */
+    for (int i = 0; i < FAN_TACH_COUNT; i++) {
         pcnt_chan_config_t chan_cfg = {
             .edge_gpio_num  = TACH_GPIO[i],
             .level_gpio_num = -1,
         };
         pcnt_channel_handle_t ch;
-        ESP_RETURN_ON_ERROR(pcnt_new_channel(s_units[i], &chan_cfg, &ch),
+        ESP_RETURN_ON_ERROR(pcnt_new_channel(s_units[i / 2], &chan_cfg, &ch),
                             TAG, "pcnt ch %d failed", i);
-        /* Count rising edges only */
         pcnt_channel_set_edge_action(ch, PCNT_CHANNEL_EDGE_ACTION_INCREASE,
-                                         PCNT_CHANNEL_EDGE_ACTION_HOLD);
-        pcnt_unit_enable(s_units[i]);
-        pcnt_unit_clear_count(s_units[i]);
-        pcnt_unit_start(s_units[i]);
+                                     PCNT_CHANNEL_EDGE_ACTION_HOLD);
         s_rpm[i] = 0; s_stall_secs[i] = 0; s_stall_fired[i] = false;
     }
 
     s_sample_timer = xTimerCreate("tach_s", pdMS_TO_TICKS(1000), pdTRUE, NULL, sample_cb);
     xTimerStart(s_sample_timer, 0);
 
-    ESP_LOGI(TAG, "PCNT tach init OK: GPIO8-11, 2 pulses/rev");
+    ESP_LOGI(TAG, "PCNT tach init OK: GPIO13/14/15/21/38/39/40/41, 2 pulses/rev");
     return ESP_OK;
 }
 

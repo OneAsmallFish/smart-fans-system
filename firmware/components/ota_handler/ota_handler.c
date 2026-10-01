@@ -1,20 +1,29 @@
 /*
- * ota_handler.c — OTA 三阶段回滚保护实现
+ * ota_handler.c — OTA 三阶段回滚保护实现 + 进度上报
  *
  * 回滚逻辑:
  *   Phase 1 — 启动后30s内调用 ota_handler_confirm_boot()，否则重启回滚
  *   Phase 2 — WiFi GOT_IP后调用 ota_handler_confirm_network()，2分钟超时
- *   Phase 3 — MQTT首次发布后调用 ota_handler_confirm_mqtt()，5分钟超时
+ *   Phase 3 — MQTT 连接建立后调用 ota_handler_confirm_mqtt()（由 main 经
+ *             mqtt_client_set_connected_cb 接线，FW-08），5分钟超时
  *   三阶段全通过 → esp_ota_mark_app_valid_cancel_rollback()
+ *
+ * 进度上报（FW-10）: fan-controller/{id}/ota/status（协议 §7：
+ * state/progress_pct/message），下载期间周期发布。
  */
 #include "ota_handler.h"
+#include "cJSON.h"
 #include "esp_https_ota.h"
 #include "esp_ota_ops.h"
+#include "esp_crt_bundle.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/timers.h"
+#include "mqtt_client_wrapper.h"
 #include <string.h>
+#include <stdio.h>
+#include <time.h>
 
 static const char *TAG = "OTA";
 
@@ -41,19 +50,43 @@ static void rollback_cb(TimerHandle_t t)
     esp_ota_mark_app_invalid_rollback_and_reboot();
 }
 
+/* ---- FW-10: ota/status 进度上报 ---- */
+static void ota_publish_status(const char *state, int progress_pct,
+                               const char *message)
+{
+    char topic[96];
+    snprintf(topic, sizeof(topic), "%s/%s/ota/status",
+             MQTT_TOPIC_PREFIX, mqtt_client_get_device_id());
+
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddNumberToObject(root, "timestamp",    (double)time(NULL));
+    cJSON_AddStringToObject(root, "device_id",    mqtt_client_get_device_id());
+    cJSON_AddStringToObject(root, "state",        state);
+    cJSON_AddNumberToObject(root, "progress_pct", progress_pct);
+    cJSON_AddStringToObject(root, "message",      message);
+    char *js = cJSON_PrintUnformatted(root);
+    if (js) {
+        mqtt_publish(topic, js, 1);   /* QoS 1，离线时告警类消息入队 */
+        free(js);
+    }
+    cJSON_Delete(root);
+}
+
 /* ---- OTA download task ---- */
 static void ota_task(void *arg)
 {
     char *url = (char *)arg;
 
     ESP_LOGI(TAG, "OTA start: %s", url);
+    ota_publish_status("downloading", 0, "Starting download");
 
-    /* ⚠️ TLS certificate verification enabled (do NOT set skip_cert_common_name_check) */
+    /* TLS: 证书 bundle 验证（FW-09 —— crt_bundle_attach 启用后才为真验证） */
     esp_https_ota_config_t ota_cfg = {
         .http_config = &(esp_http_client_config_t){
-            .url           = url,
-            .timeout_ms    = 30000,
+            .url              = url,
+            .timeout_ms       = 30000,
             .keep_alive_enable = true,
+            .crt_bundle_attach = esp_crt_bundle_attach,
         },
     };
 
@@ -61,6 +94,7 @@ static void ota_task(void *arg)
     esp_err_t r = esp_https_ota_begin(&ota_cfg, &ota_handle);
     if (r != ESP_OK) {
         ESP_LOGE(TAG, "OTA begin failed: %s", esp_err_to_name(r));
+        ota_publish_status("failed", 0, esp_err_to_name(r));
         goto done;
     }
 
@@ -68,25 +102,38 @@ static void ota_task(void *arg)
     esp_https_ota_get_img_desc(ota_handle, &new_app_info);
     ESP_LOGI(TAG, "New firmware version: %s", new_app_info.version);
 
+    int last_pct = -1;
     while (1) {
         r = esp_https_ota_perform(ota_handle);
         if (r != ESP_ERR_HTTPS_OTA_IN_PROGRESS) break;
         int progress = esp_https_ota_get_image_len_read(ota_handle);
         int total    = esp_https_ota_get_image_size(ota_handle);
-        if (total > 0) ESP_LOGI(TAG, "OTA: %d/%d bytes (%d%%)",
-                                 progress, total, progress * 100 / total);
+        if (total > 0) {
+            int pct = progress * 100 / total;
+            ESP_LOGI(TAG, "OTA: %d/%d bytes (%d%%)", progress, total, pct);
+            if (pct != last_pct) {           /* 每 1% 变化上报一次 */
+                ota_publish_status("downloading", pct, "Downloading firmware");
+                last_pct = pct;
+            }
+        }
     }
 
     if (r == ESP_OK) {
+        ota_publish_status("verifying", 100, "Verifying image");
         r = esp_https_ota_finish(ota_handle);
         if (r == ESP_OK) {
             ESP_LOGI(TAG, "OTA complete — boot partition switched — rebooting");
+            ota_publish_status("success", 100, "OTA complete, rebooting");
             vTaskDelay(pdMS_TO_TICKS(500));
             esp_restart();
+        } else {
+            ota_publish_status("failed", last_pct, esp_err_to_name(r));
         }
     } else {
         esp_https_ota_abort(ota_handle);
         ESP_LOGE(TAG, "OTA failed: %s", esp_err_to_name(r));
+        ota_publish_status("failed", last_pct > 0 ? last_pct : 0,
+                           esp_err_to_name(r));
     }
 
 done:

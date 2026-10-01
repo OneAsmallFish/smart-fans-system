@@ -14,7 +14,7 @@
 typedef struct {
     uint32_t timestamp;
     float    temps[4];      /* BME280 + DS18B20×2 + internal */
-    uint16_t fan_rpm[4];    /* 4路风扇转速 */
+    uint16_t fan_rpm[8];    /* 8路风扇转速 */
     float    voltages[3];   /* 12V / 5V / 3.3V */
 } log_entry_t;
 
@@ -24,6 +24,11 @@ esp_err_t flash_storage_init(void);
 /** NVS 字符串配置读写 */
 esp_err_t storage_write_config(const char *key, const char *value);
 esp_err_t storage_read_config(const char *key, char *out_val, size_t max_len);
+
+/** 恢复出厂：擦除本组件管理的 NVS namespace（fan_cfg 曲线/告警配置）
+ *  以及 mqtt 离线队列 namespace（fan_mqtt，含 broker_url）——FW-28。
+ *  WiFi 凭据（fan_ctrl）由 wifi_manager_factory_reset() 负责。 */
+esp_err_t storage_factory_reset(void);
 
 /** 写入一条传感器日志（内部节流，< 30s 间隔则跳过） */
 esp_err_t storage_log_sensor_data(const log_entry_t *entry);

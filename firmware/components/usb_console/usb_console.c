@@ -4,13 +4,16 @@
  * 响应格式: {"ok":true,"data":{...}}\n 或 {"ok":false,"error":"..."}\n
  */
 #include "usb_console.h"
+#include "esp_check.h"
 #include "tinyusb.h"
-#include "tusb_cdc_acm.h"
+#include "tinyusb_default_config.h"
+#include "tinyusb_cdc_acm.h"
 #include "cJSON.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
+#include "freertos/timers.h"
 #include <string.h>
 #include <stdlib.h>
 
@@ -126,25 +129,25 @@ static void console_task(void *arg)
 /* ---- Public API ---- */
 esp_err_t usb_console_init(void)
 {
-    tinyusb_config_t tusb_cfg = { .device_descriptor = NULL,
-                                   .string_descriptor = NULL,
-                                   .external_phy      = false };
+    /* esp_tinyusb v2.0：默认描述符（VID/PID 等来自组件 Kconfig） */
+    const tinyusb_config_t tusb_cfg = TINYUSB_DEFAULT_CONFIG();
     ESP_RETURN_ON_ERROR(tinyusb_driver_install(&tusb_cfg), TAG, "tusb install failed");
 
     tinyusb_config_cdcacm_t acm_cfg = {
-        .usb_dev    = TINYUSB_USBDEV_0,
         .cdc_port   = TINYUSB_CDC_ACM_0,
-        .rx_unread_buf_sz = 64,
         .callback_rx      = cdc_rx_cb,
+        .callback_rx_wanted_char = NULL,
+        .callback_line_state_changed = NULL,
+        .callback_line_coding_changed = NULL,
     };
-    ESP_RETURN_ON_ERROR(tusb_cdc_acm_init(&acm_cfg), TAG, "cdc acm init failed");
+    ESP_RETURN_ON_ERROR(tinyusb_cdcacm_init(&acm_cfg), TAG, "cdc acm init failed");
 
     s_line_queue = xQueueCreate(8, sizeof(char *));
 
     /* Register built-in commands */
     console_register_command("help",   cmd_help);
     console_register_command("reboot", cmd_reboot);
-    /* T22 will register: status, fan, wifi, ota */
+    /* main.c 注册: status / ota / fan / wifi / mqtt（FW-22 命令集） */
 
     xTaskCreate(console_task, "usb_con", 4096, NULL, 1, NULL);
     ESP_LOGI(TAG, "USB-CDC console init OK (GPIO19/20, native USB-OTG)");

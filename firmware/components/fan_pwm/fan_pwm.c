@@ -1,15 +1,18 @@
 /*
- * fan_pwm.c — 风扇 PWM 驱动  (LEDC, 25 kHz, 10-bit)
+ * fan_pwm.c — 风扇 PWM 驱动  (LEDC, 25 kHz, 10-bit, 8 通道)
  *
  * ⚠️ ESP32-S3 注意:
  *  - 使用 LEDC_LOW_SPEED_MODE（S3 不支持 HIGH_SPEED_MODE）
  *  - 不使用 ledc_set_fade_with_time()（与 WiFi 并发时可能触发 WDT）
- *    → 手动软启动：独立任务每10ms递增1%
+ *    → 手动软启动：常驻控制器任务每10ms将各风扇向目标值步进1%
+ *      （取代旧的"每次 set_duty 派生临时任务"模型，消除并发竞态）
  */
 #include "fan_pwm.h"
+#include "esp_check.h"
 #include "driver/ledc.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "esp_log.h"
 #include <string.h>
 
@@ -19,32 +22,32 @@ static const char *TAG = "FAN_PWM";
 #define PWM_FREQ_HZ      25000
 #define PWM_RESOLUTION   LEDC_TIMER_10_BIT
 #define PWM_MAX_DUTY     1023
+#define SOFTSTART_MS     10   /* 每 1% 步进的间隔 */
 
-static const int FAN_GPIO[FAN_PWM_COUNT] = { 4, 5, 6, 7 };
-static uint8_t s_duty_pct[FAN_PWM_COUNT] = { 0 };
+/* v1.2 权威引脚表：GPIO5-12 → LEDC_CH0-CH7 → 74AHCT125 ×2 → Fan1-8 PWM */
+static const int FAN_GPIO[FAN_PWM_COUNT] = { 5, 6, 7, 8, 9, 10, 11, 12 };
 
-/* ---- soft-start task ---- */
-typedef struct { uint8_t fan; uint8_t target; } softstart_args_t;
+static uint8_t          s_duty_pct[FAN_PWM_COUNT]   = { 0 };  /* 实际输出 */
+static uint8_t          s_target_pct[FAN_PWM_COUNT] = { 0 };  /* 目标值 */
+static SemaphoreHandle_t s_pwm_mutex = NULL;
 
-static void softstart_task(void *arg)
+/* ---- 常驻软启动控制器任务：所有 LEDC 写入集中在此任务，天然串行化 ---- */
+static void softstart_controller_task(void *arg)
 {
-    softstart_args_t *a = (softstart_args_t *)arg;
-    uint8_t fan    = a->fan;
-    uint8_t target = a->target;
-    free(a);
-
-    uint8_t current = s_duty_pct[fan];
-    int8_t  step    = (target > current) ? 1 : -1;
-
-    while (current != target) {
-        current = (uint8_t)(current + step);
-        uint32_t raw = (uint32_t)current * PWM_MAX_DUTY / 100;
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)fan, raw);
-        ledc_update_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)fan);
-        s_duty_pct[fan] = current;
-        vTaskDelay(pdMS_TO_TICKS(10)); /* 10ms per 1% step */
+    (void)arg;
+    while (1) {
+        xSemaphoreTake(s_pwm_mutex, portMAX_DELAY);
+        for (int i = 0; i < FAN_PWM_COUNT; i++) {
+            if (s_duty_pct[i] != s_target_pct[i]) {
+                s_duty_pct[i] += (s_target_pct[i] > s_duty_pct[i]) ? 1 : -1;
+                uint32_t raw = (uint32_t)s_duty_pct[i] * PWM_MAX_DUTY / 100;
+                ledc_set_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)i, raw);
+                ledc_update_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)i);
+            }
+        }
+        xSemaphoreGive(s_pwm_mutex);
+        vTaskDelay(pdMS_TO_TICKS(SOFTSTART_MS));
     }
-    vTaskDelete(NULL);
 }
 
 /* ---------------------------------------------------------------- */
@@ -69,9 +72,18 @@ esp_err_t fan_pwm_init(void)
             .timer_sel  = LEDC_TIMER_0,
         };
         ESP_RETURN_ON_ERROR(ledc_channel_config(&ch), TAG, "ch%d config failed", i);
-        s_duty_pct[i] = 0;
+        s_duty_pct[i]   = 0;
+        s_target_pct[i] = 0;
     }
-    ESP_LOGI(TAG, "LEDC init OK: 25kHz, 10-bit, GPIO4-7");
+
+    s_pwm_mutex = xSemaphoreCreateMutex();
+    if (!s_pwm_mutex) return ESP_ERR_NO_MEM;
+
+    /* 常驻控制器任务（2KB 栈足够：只做 LEDC 寄存器写入） */
+    if (xTaskCreate(softstart_controller_task, "fan_ss", 2048, NULL, 3, NULL) != pdPASS)
+        return ESP_ERR_NO_MEM;
+
+    ESP_LOGI(TAG, "LEDC init OK: 25kHz, 10-bit, GPIO5-12 (8 fans, duty=0)");
     return ESP_OK;
 }
 
@@ -80,17 +92,17 @@ esp_err_t fan_pwm_set_duty(uint8_t fan_index, uint8_t percent)
     if (fan_index >= FAN_PWM_COUNT) return ESP_ERR_INVALID_ARG;
     if (percent > 100) percent = 100;
 
-    softstart_args_t *a = malloc(sizeof(softstart_args_t));
-    if (!a) return ESP_ERR_NO_MEM;
-    a->fan = fan_index; a->target = percent;
-
-    /* Soft-start runs in a short-lived task (stack 2KB sufficient) */
-    xTaskCreate(softstart_task, "fan_ss", 2048, a, 3, NULL);
+    xSemaphoreTake(s_pwm_mutex, portMAX_DELAY);
+    s_target_pct[fan_index] = percent;
+    xSemaphoreGive(s_pwm_mutex);
     return ESP_OK;
 }
 
 uint8_t fan_pwm_get_duty(uint8_t fan_index)
 {
     if (fan_index >= FAN_PWM_COUNT) return 0;
-    return s_duty_pct[fan_index];
+    xSemaphoreTake(s_pwm_mutex, portMAX_DELAY);
+    uint8_t d = s_duty_pct[fan_index];
+    xSemaphoreGive(s_pwm_mutex);
+    return d;
 }

@@ -1,0 +1,6 @@
+## IDF Component Manager Manifest File
+## TinyUSB 已从 IDF 主树移至组件仓库（esp_tinyusb），CDC-ACM 控制台依赖它
+dependencies:
+  espressif/esp_tinyusb:
+    version: "^2.0.0"
+  idf: "^5.0"

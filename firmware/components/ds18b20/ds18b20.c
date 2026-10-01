@@ -1,9 +1,10 @@
 /*
- * ds18b20.c — DS18B20 OneWire 驱动 (RMT 精确时序)
- * 自研实现，保证时序可控
+ * ds18b20.c — DS18B20 OneWire 温度传感器驱动（GPIO bit-bang 实现）
  * 复位脉冲: 480µs LOW + 等待 70µs presence + 410µs
  * 写0槽: 60µs LOW;  写1槽: 1µs LOW + 59µs HIGH
  * 读槽:  1µs LOW + 14µs + 采样 + 45µs
+ * 时序由 esp_rom_delay_us 保证（读取期间短暂关抢占可接受 @1Hz）。
+ * RMT 硬件化迁移为可选优化项，不强制（FW-24 口径）。
  */
 #include "ds18b20.h"
 #include "driver/rmt_tx.h"
@@ -14,6 +15,7 @@
 #include "freertos/task.h"
 #include "esp_rom_sys.h"
 #include <string.h>
+#include <stdio.h>
 
 static const char *TAG = "DS18B20";
 
@@ -165,6 +167,18 @@ static bool search_next(uint8_t *rom_out)
     memcpy(s_rom_no, rom, DS18B20_ROM_SIZE);
     memcpy(rom_out, rom, DS18B20_ROM_SIZE);
     return true;
+}
+
+/* ---- ROM 地址 → 协议字符串（"28-" + 6 字节 hex，FW-18/ADJ-6） ---- */
+void ds18b20_address_str(const uint8_t rom[DS18B20_ROM_SIZE],
+                         char *out, size_t out_len)
+{
+    if (!rom || !out || out_len < DS18B20_ADDR_STR_LEN) {
+        if (out && out_len > 0) out[0] = '\0';
+        return;
+    }
+    snprintf(out, out_len, "%02x-%02x%02x%02x%02x%02x%02x",
+             rom[0], rom[1], rom[2], rom[3], rom[4], rom[5], rom[6]);
 }
 
 /* ---- Public API ---- */

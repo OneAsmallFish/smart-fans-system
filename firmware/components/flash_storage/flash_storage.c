@@ -2,6 +2,7 @@
  * flash_storage.c — NVS 配置持久化 + WL 循环日志
  */
 #include "flash_storage.h"
+#include "esp_check.h"
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "wear_levelling.h"
@@ -88,6 +89,24 @@ esp_err_t storage_read_config(const char *key, char *out_val, size_t max_len)
     esp_err_t r = nvs_get_str(nvs, key, out_val, &max_len);
     nvs_close(nvs);
     return r;
+}
+
+esp_err_t storage_factory_reset(void)
+{
+    /* fan_cfg: 本组件 namespace（曲线/告警配置）
+     * fan_mqtt: mqtt_client 的 broker_url 与离线队列（FW-06 后逐 key 管理，
+     * 此处整 namespace 擦除仅用于恢复出厂场景，不影响运行期 flush） */
+    const char *namespaces[] = { NVS_NS, "fan_mqtt" };
+    for (size_t i = 0; i < sizeof(namespaces)/sizeof(namespaces[0]); i++) {
+        nvs_handle_t nvs;
+        if (nvs_open(namespaces[i], NVS_READWRITE, &nvs) == ESP_OK) {
+            nvs_erase_all(nvs);
+            nvs_commit(nvs);
+            nvs_close(nvs);
+        }
+    }
+    ESP_LOGW(TAG, "Factory reset: fan_cfg + fan_mqtt namespaces erased");
+    return ESP_OK;
 }
 
 esp_err_t storage_log_sensor_data(const log_entry_t *entry)

@@ -8,10 +8,14 @@
  *   4. 事件处理器内绝对不调用 vTaskDelay（用 esp_rom_delay_us 替代）
  */
 #include "wifi_manager.h"
+#include "esp_check.h"
+#include "flash_storage.h"
 #include "esp_wifi.h"
 #include "esp_netif.h"
 #include "esp_event.h"
 #include "esp_log.h"
+#include "esp_random.h"
+#include "esp_timer.h"
 #include "esp_sntp.h"
 #include "esp_http_server.h"
 #include "nvs_flash.h"
@@ -30,10 +34,13 @@ static const char *TAG = "WIFI_MGR";
 #define NVS_KEY_SSID    "wifi_ssid"
 #define NVS_KEY_PASS    "wifi_pass"
 
-/* Button GPIO */
-#define BTN_GPIO        38
+/* Button GPIO（v1.2 权威引脚表：GPIO47，原 38 与 FAN5_TACH 冲突） */
+#define BTN_GPIO        47
 #define BTN_LONG_MS     3000   /* 3s  → AP 配网模式 */
 #define BTN_FACTORY_MS  10000  /* 10s → 恢复出厂设置 */
+
+/* AP 配网 portal 最低限度确认机制（FW-29）：随机 4 位码打印在串口日志 */
+static char s_portal_code[5] = {0};
 
 static wifi_connected_cb_t    s_on_connected    = NULL;
 static wifi_disconnected_cb_t s_on_disconnected = NULL;
@@ -73,6 +80,8 @@ static esp_err_t portal_root_handler(httpd_req_t *req)
         "<form method='POST' action='/save'>"
         "SSID: <input name='ssid' type='text' required><br><br>"
         "Password: <input name='pass' type='password'><br><br>"
+        "Confirm code (printed on device serial log): "
+        "<input name='code' type='text' required><br><br>"
         "<input type='submit' value='Save &amp; Connect'>"
         "</form></body></html>";
     httpd_resp_set_type(req, "text/html");
@@ -88,29 +97,42 @@ static esp_err_t portal_save_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    /* Parse URL-encoded form: ssid=...&pass=... */
-    char ssid[33] = {0}, pass[65] = {0};
+    /* Parse URL-encoded form: ssid=...&pass=...&code=... */
+    char ssid[33] = {0}, pass[65] = {0}, code[8] = {0};
     httpd_query_key_value(buf, "ssid", ssid, sizeof(ssid));
     httpd_query_key_value(buf, "pass", pass, sizeof(pass));
+    httpd_query_key_value(buf, "code", code, sizeof(code));
 
-    if (ssid[0]) {
-        wifi_manager_set_credentials(ssid, pass);
-        httpd_resp_sendstr(req, "<html><body><p>Saved! Rebooting...</p></body></html>");
-        /* Reboot after short delay (timer, not vTaskDelay in handler) */
-        static TimerHandle_t reboot_t = NULL;
-        if (!reboot_t) {
-            reboot_t = xTimerCreate("reboot", pdMS_TO_TICKS(1500), pdFALSE, NULL,
-                                    (void(*)(TimerHandle_t))esp_restart);
-        }
-        xTimerStart(reboot_t, 0);
-    } else {
+    if (!ssid[0]) {
         httpd_resp_sendstr(req, "<html><body><p>Invalid SSID</p></body></html>");
+        return ESP_OK;
     }
+    /* FW-29: 必须输入串口日志中打印的 4 位确认码 */
+    if (s_portal_code[0] == '\0' || strcmp(code, s_portal_code) != 0) {
+        httpd_resp_sendstr(req,
+            "<html><body><p>Wrong confirm code — see device serial log</p>"
+            "<p><a href='/'>Back</a></p></body></html>");
+        return ESP_OK;
+    }
+
+    wifi_manager_set_credentials(ssid, pass);
+    httpd_resp_sendstr(req, "<html><body><p>Saved! Rebooting...</p></body></html>");
+    /* Reboot after short delay (timer, not vTaskDelay in handler) */
+    static TimerHandle_t reboot_t = NULL;
+    if (!reboot_t) {
+        reboot_t = xTimerCreate("reboot", pdMS_TO_TICKS(1500), pdFALSE, NULL,
+                                (void(*)(TimerHandle_t))esp_restart);
+    }
+    xTimerStart(reboot_t, 0);
     return ESP_OK;
 }
 
 static void start_captive_portal(void)
 {
+    /* FW-29: 生成随机 4 位确认码并打印到串口日志（USB-CDC） */
+    uint32_t r = esp_random() % 10000;
+    snprintf(s_portal_code, sizeof(s_portal_code), "%04lu", (unsigned long)r);
+
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     if (httpd_start(&s_httpd, &cfg) != ESP_OK) return;
 
@@ -189,7 +211,7 @@ static void btn_poll_cb(TimerHandle_t t)
 
         if (held_ms >= BTN_FACTORY_MS) {
             ESP_LOGW(TAG, "Factory reset triggered");
-            wifi_manager_clear_credentials();
+            wifi_manager_factory_reset();
             esp_restart();
         } else if (held_ms >= BTN_LONG_MS) {
             ESP_LOGI(TAG, "Entering AP provisioning mode");
@@ -289,6 +311,8 @@ esp_err_t wifi_manager_start_ap(void)
 
     start_captive_portal();
     ESP_LOGI(TAG, "AP mode: SSID=%s (open), portal=192.168.4.1", ap_ssid);
+    ESP_LOGW(TAG, "=== WiFi portal confirm code: %s (enter on the setup page) ===",
+             s_portal_code);
     return ESP_OK;
 }
 
@@ -313,6 +337,15 @@ esp_err_t wifi_manager_clear_credentials(void)
         nvs_close(nvs);
     }
     ESP_LOGI(TAG, "WiFi credentials cleared (factory reset)");
+    return ESP_OK;
+}
+
+esp_err_t wifi_manager_factory_reset(void)
+{
+    /* FW-28: 统一清理三个 namespace —— fan_ctrl(WiFi凭据) +
+     * fan_cfg(曲线/告警配置) + fan_mqtt(broker/离线队列) */
+    wifi_manager_clear_credentials();
+    storage_factory_reset();
     return ESP_OK;
 }
 

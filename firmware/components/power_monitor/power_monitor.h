@@ -1,18 +1,19 @@
 /*
  * power_monitor.h — 电源电压监控驱动 (ADC1)
  * ⚠️ 仅使用 ADC1（ADC2 与 WiFi 冲突）
- * 12V: 100kΩ+20kΩ 分压 → ~2.0V @ADC (VOLTAGE_DIVIDER_12V = 6.0)
- * 5V:  10kΩ+10kΩ  分压 → ~2.5V @ADC (VOLTAGE_DIVIDER_5V  = 2.0)
- * 3.3V:10kΩ+10kΩ  分压 → ~1.65V@ADC (VOLTAGE_DIVIDER_3V3 = 2.0)
+ * v1.2 权威引脚表/分压网络（hardware remediation H-03）：
+ * 12V: GPIO1 (ADC1_CH0)，100kΩ+20kΩ 分压 → ~2.0V @ADC (÷6.0)
+ * 5V:  GPIO2 (ADC1_CH1)，47kΩ+10kΩ   分压 → ~0.88V @ADC (÷5.7)
+ * 3.3V:GPIO4 (ADC1_CH3)，47kΩ+10kΩ   分压 → ~0.58V @ADC (÷5.7)
  */
 #pragma once
 #include "esp_err.h"
 #include <stdbool.h>
 
 /* 分压比宏 (actual_V = adc_V * ratio) */
-#define VOLTAGE_DIVIDER_12V  6.0f    /* 100k/(100k+20k) = 1/6 → ×6 */
-#define VOLTAGE_DIVIDER_5V   2.0f    /* 10k/(10k+10k)   = 1/2 → ×2 */
-#define VOLTAGE_DIVIDER_3V3  2.0f    /* 10k/(10k+10k)   = 1/2 → ×2 */
+#define VOLTAGE_DIVIDER_12V  6.0f    /* 100k/(100k+20k) 倒数 → ×6.0 */
+#define VOLTAGE_DIVIDER_5V   5.7f    /* 47k/(47k+10k)   倒数 → ×5.7 */
+#define VOLTAGE_DIVIDER_3V3  5.7f    /* 47k/(47k+10k)   倒数 → ×5.7 */
 
 typedef void (*power_fail_cb_t)(void);
 

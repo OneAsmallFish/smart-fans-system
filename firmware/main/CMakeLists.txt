@@ -13,5 +13,20 @@ idf_component_register(
         usb
         freertos
         log
-        cJSON
+        esp_timer
+        json
+        # ---- 自定义组件（FW-02: 13 个全部补齐） ----
+        fan_pwm
+        fan_tach
+        fan_curve
+        alert_manager
+        bme280
+        ds18b20
+        power_monitor
+        status_led
+        wifi_manager
+        mqtt_client
+        usb_console
+        flash_storage
+        ota_handler
 )

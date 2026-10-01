@@ -3,6 +3,7 @@
  * ⚠️ 不使用 ADC2（与 WiFi 冲突）
  */
 #include "power_monitor.h"
+#include "esp_check.h"
 #include "esp_adc/adc_oneshot.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
@@ -12,10 +13,10 @@
 
 static const char *TAG = "PWR_MON";
 
-/* ADC1 通道分配 (GPIO1=CH0, GPIO2=CH1, GPIO3=CH2) */
-#define CH_3V3   ADC_CHANNEL_0   /* GPIO1 */
+/* ADC1 通道分配 (v1.2 权威引脚表: GPIO1=CH0, GPIO2=CH1, GPIO4=CH3) */
+#define CH_3V3   ADC_CHANNEL_3   /* GPIO4 */
 #define CH_5V    ADC_CHANNEL_1   /* GPIO2 */
-#define CH_12V   ADC_CHANNEL_2   /* GPIO3 */
+#define CH_12V   ADC_CHANNEL_0   /* GPIO1 */
 #define ADC_ATTEN ADC_ATTEN_DB_11 /* 最大 ~3.1V 输入 */
 #define FILTER_N 16               /* 均值滤波采样次数 */
 #define FAIL_THRESHOLD_V  10.0f   /* 12V 低于此值视为断电 */
@@ -84,7 +85,7 @@ esp_err_t power_monitor_init(void)
         temperature_sensor_enable(s_temp_sensor);
     }
 
-    ESP_LOGI(TAG, "ADC1 power monitor init OK (CH0=3.3V, CH1=5V, CH2=12V)");
+    ESP_LOGI(TAG, "ADC1 power monitor init OK (CH0/GPIO1=12V, CH1/GPIO2=5V, CH3/GPIO4=3.3V)");
     return ESP_OK;
 }
 

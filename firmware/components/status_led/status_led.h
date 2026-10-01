@@ -1,9 +1,12 @@
 /*
  * status_led.h — WS2812B-2020 RGB 状态指示灯驱动
  * 平台: ESP32-S3  外设: RMT (TX)
- * GPIO48, VCC=3.3V (⚠️ 不接5V，3.3V时VIH_min=2.31V < GPIO VOH=3.0V ✓)
+ * GPIO45, VCC=3.3V (⚠️ 不接5V，3.3V时VIH_min=2.31V < GPIO VOH=3.0V ✓)
+ * GPIO45 为 strapping(VDD_SPI 电压) 引脚：WS2812 DIN 为高阻输入，
+ * 复位期内部下拉保持 VDD_SPI=3.3V，安全（硬件决策 D5/权威引脚表 §1）
  */
 #pragma once
+#include "esp_err.h"
 #include <stdint.h>
 
 /* ---- 工作模式 ---- */
@@ -16,8 +19,8 @@ typedef enum {
     LED_MODE_OFF,               /* 关闭                   */
 } led_mode_t;
 
-/** 初始化 RMT + GPIO，完成后设置为 LED_MODE_OFF */
-void status_led_init(void);
+/** 初始化 RMT + GPIO，完成后设置为 LED_MODE_OFF；返回底层错误码 */
+esp_err_t status_led_init(void);
 
 /** 切换工作模式；内部 50ms 定时器驱动动画 */
 void status_led_set_mode(led_mode_t mode);
