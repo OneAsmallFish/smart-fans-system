@@ -206,6 +206,7 @@ smart-fans-system/
 ├── ha/                        # Home Assistant 手动 packages 配置（__DEVICE_ID__ 占位）
 ├── hardware/                  # 硬件设计文件（嘉立创 EDA 工程 + BOM + Gerber；旧 KiCad 工程归档 legacy/）
 ├── test/                      # 端到端集成测试 + 冒烟测试脚本
+│   └── simulator/             # 无硬件协议模拟器（esp32-sim0001，Web/HA 全链路联调）
 └── docs/                      # 部署指南 + 硬件组装指南 + MQTT协议规范
 ```
 
@@ -269,9 +270,17 @@ cd web/frontend && npm ci && npm run build   # 产出 dist/index.html
 ### 运行冒烟测试
 
 ```bash
-chmod +x test/smoke_test.sh
 ./test/smoke_test.sh <mqtt_host> <api_host>
-# 预期输出: PASS=25 FAIL=0（含 TST-04 协议命令用例）
+# 预期输出: PASS: 25  FAIL: 0（含 TST-04 协议命令用例；其中 8 项为静态断言）
+```
+
+### 无硬件联调（协议模拟器）
+
+```bash
+cd test/simulator && npm ci
+node simulator.js --broker mqtt://<broker_host>:1883
+# 模拟设备 esp32-sim0001 上线并周期上报，可在 Web 控制台查看/控制
+# 详见 test/simulator/README.md；契约自检: node selftest.js --broker mqtt://<broker>:1883
 ```
 
 ---
