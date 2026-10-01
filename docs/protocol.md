@@ -524,7 +524,9 @@ Payload增加 `buffered: true` 标记：
 ### Go Agent侧
 - 订阅 `fan-controller/+/sensor/#` 监听所有设备传感器数据
 - 订阅 `fan-controller/+/alert` 接收告警转发至系统日志
-- 发布GPU/CPU数据到自定义Topic `system-monitor/{hostname}/sensor/gpu`
+- 发布本机指标到 `system-monitor/{hostname}/sensor/{collector}`，collector 为采集器名：
+  `system`（CPU/内存/磁盘/负载）与 `gpu`（nvidia-smi；无 GPU 时自动禁用、该 topic 不发布）
+- 注意：该 topic 不在 `fan-controller/#` 之下，Web 后端不订阅、控制台不显示，仅供 MQTT 订阅方消费
 
 ### Web后端侧
 - WebSocket每2秒向前端推送最新缓存的设备状态

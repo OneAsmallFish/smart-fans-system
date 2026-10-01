@@ -16,9 +16,13 @@ ESP32-S3 (固件)
 | 工具 | 版本 | 安装 |
 |------|------|------|
 | ESP-IDF | v5.3+ | `./install.sh` [官方文档](https://docs.espressif.com/projects/esp-idf/zh_CN/latest/esp32s3/get-started/) |
-| Go | 1.22+ | `sudo apt install golang-go` |
+| Go | 1.25+ | 官网安装包；Ubuntu 24.04 `apt install golang-go` 仅 1.22，依赖 `GOTOOLCHAIN=auto` 联网下载 1.25 工具链——离线/内网环境必须手动装 1.25+ |
 | Node.js | 20+ | `curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash -` |
 | Mosquitto | 2.0+ | `sudo apt install mosquitto mosquitto-clients` |
+| git / curl | 任意 | `sudo apt install git curl`（克隆仓库与冒烟测试依赖） |
+
+> 本文档假设仓库克隆至 `/opt/smart-fan/smart-fans-system`（§4.3 nginx 路径以此为准）。
+> 国内拉取 Go 依赖建议：`go env -w GOPROXY=https://goproxy.cn,direct`。
 
 ---
 
@@ -89,9 +93,9 @@ EOF
 sudo systemctl restart mosquitto
 sudo systemctl enable mosquitto
 
-# 验证连接
+# 验证连接（订阅端应打印: fan-controller/verify hello）
 mosquitto_sub -h localhost -t "fan-controller/+" -v &
-mosquitto_pub -h localhost -t "test" -m "hello"
+mosquitto_pub -h localhost -t "fan-controller/verify" -m "hello"
 ```
 
 ---
@@ -108,10 +112,11 @@ make build
 sudo mkdir -p /etc/smart-fan-agent
 cat > /etc/smart-fan-agent/config.yaml << 'EOF'
 mqtt:
-  broker: "mqtt://localhost:1883"
-  port: 1883
+  broker: "mqtt://localhost:1883"   # 端口并入 URL（无独立 port 字段）
   client_id: "smart-fan-agent"
   topic_prefix: "fan-controller"
+  username: ""                      # broker 启用鉴权时填写
+  password: ""
 
 serial:
   port: "/dev/ttyACM0"    # ESP32 USB-CDC 串口
@@ -133,6 +138,11 @@ sudo systemctl status smart-fan-agent
 journalctl -u smart-fan-agent -f
 ```
 
+> **数据流说明**：Agent 采集的本机 CPU/内存/GPU 指标发布到
+> `system-monitor/{hostname}/sensor/{system|gpu}`，**不会**出现在 Web 控制台
+> （后端只订阅 `fan-controller/#`，控制台面向 ESP32 设备）。Agent 指标供 MQTT
+> 订阅方（如 Home Assistant）消费；`/api/devices` 里看不到 agent 主机属正常现象。
+
 ---
 
 ## 第四步：Web 控制台部署
@@ -141,18 +151,18 @@ journalctl -u smart-fan-agent -f
 
 ```bash
 cd web/backend
-npm install
+npm ci                # lockfile 已提交，用 ci 保证可复现
 export MQTT_BROKER="mqtt://localhost:1883"
 export PORT=3001
 npm run build
-npm start
+npm start             # 前台运行；生产常驻建议 pm2 或 systemd 单元
 ```
 
 ### 4.2 前端构建
 
 ```bash
 cd web/frontend
-npm install
+npm ci
 npm run build
 # 生成 dist/ 目录
 ```
@@ -162,7 +172,7 @@ npm run build
 ```nginx
 server {
     listen 80;
-    root /opt/smart-fan/web/frontend/dist;
+    root /opt/smart-fan/smart-fans-system/web/frontend/dist;
     index index.html;
 
     location / {
@@ -179,9 +189,13 @@ server {
 }
 ```
 
+> ⚠️ 已知限制：前端 5 个页面硬编码 `ws://${hostname}:3001` 直连后端 WebSocket，
+> 反向代理**并未收口** 3001 端口（须对浏览器可达），且 HTTPS 部署下会被混合内容
+> 策略拦截（需改前端 WS_URL 为 wss 相对路径——规划项）。
+
 ```bash
 # 开发模式（前后端热重载）
-cd web/frontend && npm run dev &
+cd web/frontend && npm run dev -- --host 0.0.0.0 &   # --host 使局域网可访问（vite 默认只绑 localhost）
 cd web/backend  && npm run dev &
 # 前端: http://localhost:5173
 # 后端: http://localhost:3001
@@ -236,6 +250,8 @@ mosquitto_pub -h localhost \
 | LED 红色快闪 | 告警 (温度/停转) | 检查风扇接线和服务器温度 |
 | ESP32 无法识别串口 | USB 驱动 | ESP32-S3 使用原生 USB-OTG，无需驱动，但需 Linux udev 规则：`echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="303a", MODE="0666"' | sudo tee /etc/udev/rules.d/99-esp32.rules` |
 | Go Agent 找不到串口 | 串口路径错误 | `ls /dev/ttyACM*` 确认路径，更新 config.yaml |
+| Agent 启动即退出（status=216/GROUP） | 旧版 service 的 `Group=nobody` 在 Debian/Ubuntu 上不存在（组名为 nogroup） | 更新仓库后重跑 `install.sh` 覆盖 unit；或临时 drop-in：`printf '[Service]\nGroup=nogroup\n' > /etc/systemd/system/smart-fan-agent.service.d/10-group.conf && systemctl daemon-reload` |
+| go build 报 `go.mod requires go >= 1.25.0` | 系统工具链低于 go.mod 要求 | 安装 Go 1.25+；或保持默认 `GOTOOLCHAIN=auto` 允许联网下载工具链（离线环境必须手动装） |
 | MQTT 数据不更新 | Broker 地址错误 | 检查 firmware NVS 中的 broker URL，USB 命令: `wifi status` |
 | Web APP 无设备 | MQTT 未订阅 | 检查后端日志: `[mqtt] connected to ...` |
 
@@ -254,10 +270,12 @@ cd agent && go build ./... && go test ./...   # PASS
 cd web/backend  && npm run build    # 无错误
 cd web/frontend && npm run build    # dist/ 生成
 
-# 系统冒烟测试
-chmod +x test/smoke_test.sh
+# 系统冒烟测试（脚本已带可执行位，无需 chmod）
 ./test/smoke_test.sh localhost localhost 2>&1 | tee smoke.log
 grep "PASS\|FAIL" smoke.log
+# 期望输出: PASS: 25  FAIL: 0（任一 FAIL 退出码非 0）
+# 注: 25 项中 8 项为静态断言（CP11/CP12/CP14 部分只检查 ha/*.yaml 与文档），
+#     与运行状态无关；运行时链路以其余 17 项为准
 ```
 
 
