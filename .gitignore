@@ -58,6 +58,7 @@ Thumbs.db
 
 # AI 过程产物（DOC-05: 字节级过程产物，移出 git 跟踪）
 .omo/
+.zcode/
 .sisyphus/
 .claude/
 
